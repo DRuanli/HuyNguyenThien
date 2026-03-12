@@ -6,7 +6,11 @@ import infrastructure.persistence.Vocabulary;
 import domain.model.*;
 import domain.support.RecursiveConvolutionSupportCalculator;
 import domain.support.ParallelRecursiveConvolutionSupportCalculator;
+import domain.support.DirectConvolutionSupportCalculator;
+import domain.support.FFTConvolutionSupportCalculator;
+import domain.support.ParallelFFTConvolutionSupportCalculator;
 import application.config.ParallelizationMode;
+import application.config.SupportCalculatorType;
 import infrastructure.topK.TopKHeap;
 
 import java.util.*;
@@ -75,7 +79,20 @@ public class TUFCI extends AbstractMiner {
      * @param mode Parallelization mode (DEFAULT, ONLY_PHASE1, ONLY_PHASE2, ONLY_PHASE3, ONLY_CLOSURE, ONLY_SUPPORT, or FULL_PARALLEL)
      */
     public TUFCI(UncertainDatabase database, double tau, int k, ParallelizationMode mode) {
-        super(database, tau, k, createCalculator(tau, mode), mode);
+        super(database, tau, k, createCalculator(tau, mode, SupportCalculatorType.AUTO), mode);
+    }
+
+    /**
+     * Constructs a new TUFCI miner with specified parallelization mode and support calculator type.
+     *
+     * @param database The uncertain database to mine
+     * @param tau The probability threshold
+     * @param k The number of top patterns to find
+     * @param mode Parallelization mode
+     * @param supportType Support calculator type (DIRECT, RECURSIVE, PARALLEL, FFT, or AUTO)
+     */
+    public TUFCI(UncertainDatabase database, double tau, int k, ParallelizationMode mode, SupportCalculatorType supportType) {
+        super(database, tau, k, createCalculator(tau, mode, supportType), mode);
     }
 
     /**
@@ -92,19 +109,40 @@ public class TUFCI extends AbstractMiner {
     }
 
     /**
-     * Factory method to create appropriate support calculator based on parallelization mode.
+     * Factory method to create appropriate support calculator based on parallelization mode and support type.
      *
      * @param tau probability threshold
      * @param mode parallelization mode
+     * @param supportType support calculator type
      * @return appropriate SupportCalculator instance
      */
-    private static SupportCalculator createCalculator(double tau, ParallelizationMode mode) {
-        if (mode.isSupportCalculatorParallel()) {
-            // Use parallel calculator for ONLY_PHASE2, ONLY_PHASE3, ONLY_SUPPORT, and FULL_PARALLEL modes
-            return new ParallelRecursiveConvolutionSupportCalculator(tau);
-        } else {
-            // Use sequential calculator for DEFAULT, ONLY_PHASE1, and ONLY_CLOSURE modes
-            return new RecursiveConvolutionSupportCalculator(tau);
+    private static SupportCalculator createCalculator(double tau, ParallelizationMode mode, SupportCalculatorType supportType) {
+        // If AUTO mode, choose based on parallelization mode
+        if (supportType == SupportCalculatorType.AUTO) {
+            if (mode.isSupportCalculatorParallel()) {
+                // Use parallel calculator for ONLY_PHASE2, ONLY_PHASE3, ONLY_SUPPORT, and FULL_PARALLEL modes
+                return new ParallelRecursiveConvolutionSupportCalculator(tau);
+            } else {
+                // Use sequential calculator for DEFAULT, ONLY_PHASE1, and ONLY_CLOSURE modes
+                return new RecursiveConvolutionSupportCalculator(tau);
+            }
+        }
+
+        // Otherwise, use the explicitly specified support calculator type
+        switch (supportType) {
+            case DIRECT:
+                return new DirectConvolutionSupportCalculator(tau);
+            case RECURSIVE:
+                return new RecursiveConvolutionSupportCalculator(tau);
+            case PARALLEL:
+                return new ParallelRecursiveConvolutionSupportCalculator(tau);
+            case FFT:
+                return new FFTConvolutionSupportCalculator(tau);
+            case PARALLEL_FFT:
+                return new ParallelFFTConvolutionSupportCalculator(tau);
+            default:
+                // Fallback to recursive (should never happen)
+                return new RecursiveConvolutionSupportCalculator(tau);
         }
     }
 

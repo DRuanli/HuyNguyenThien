@@ -4,16 +4,16 @@ import domain.observer.PhaseTimingObserver;
 import infrastructure.factory.MinerFactory;
 import domain.model.FrequentItemset;
 import infrastructure.persistence.UncertainDatabase;
-import presentation.Usage;
 import domain.mining.TUFCI;
 import application.config.ParallelizationMode;
+import application.config.SupportCalculatorType;
 
 import java.io.IOException;
 import java.util.List;
 
 public class Main {
     public static void main(String[] args) throws IOException {
-        if (args.length < 1){
+        if (args.length < 1) {
             Usage.printUsage();
         }
 
@@ -24,6 +24,9 @@ public class Main {
 
         // Parse --parallel flag
         ParallelizationMode parallelMode = parseParallelizationMode(args);
+
+        // Parse --support flag
+        SupportCalculatorType supportType = parseSupportCalculatorType(args);
 
         // Print configuration
         System.out.println("╔═══════════════════════════════════════════════════════════╗");
@@ -36,6 +39,7 @@ public class Main {
         System.out.println("  Tau (threshold)   : " + tau);
         System.out.println("  K (top patterns)  : " + k);
         System.out.println("  Parallelization   : " + parallelMode.getDescription());
+        System.out.println("  Support Calculator: " + getSupportCalculatorDescription(supportType));
         System.out.println();
 
         System.out.println("Loading database...");
@@ -47,7 +51,7 @@ public class Main {
 
 
         System.out.println("Creating TUFCI miner...");
-        TUFCI miner = MinerFactory.createMiner(database, tau, k, parallelMode);
+        TUFCI miner = MinerFactory.createMiner(database, tau, k, parallelMode, supportType);
 
         PhaseTimingObserver observer = new PhaseTimingObserver();
         System.out.println("  Algorithm           : TUFCI");
@@ -132,6 +136,74 @@ public class Main {
 
         // No --parallel flag found → default to DEFAULT (fully sequential)
         return ParallelizationMode.DEFAULT;
+    }
+
+    /**
+     * Parse --support flag from command-line arguments.
+     *
+     * Supported formats:
+     * - (no flag)              → SupportCalculatorType.AUTO (choose based on parallelization mode)
+     * - --support direct       → SupportCalculatorType.DIRECT (DirectConvolutionSupport)
+     * - --support DCS          → SupportCalculatorType.DIRECT
+     * - --support recursive    → SupportCalculatorType.RECURSIVE (RecursiveConvolutionSupport)
+     * - --support RCS          → SupportCalculatorType.RECURSIVE
+     * - --support parallel     → SupportCalculatorType.PARALLEL (ParallelRecursiveConvolution)
+     * - --support PRC          → SupportCalculatorType.PARALLEL
+     * - --support fft          → SupportCalculatorType.FFT (FFTConvolutionSupport)
+     * - --support FFT          → SupportCalculatorType.FFT
+     * - --support parallelfft  → SupportCalculatorType.PARALLEL_FFT (ParallelFFTConvolution)
+     * - --support PFFT         → SupportCalculatorType.PARALLEL_FFT
+     * - --support auto         → SupportCalculatorType.AUTO
+     *
+     * @param args command-line arguments
+     * @return parsed SupportCalculatorType
+     */
+    private static SupportCalculatorType parseSupportCalculatorType(String[] args) {
+        // Search for --support flag
+        for (int i = 0; i < args.length; i++) {
+            if (args[i].equals("--support")) {
+                // Check if there's a value after the flag
+                if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
+                    // --support <value>
+                    String value = args[i + 1];
+                    try {
+                        return SupportCalculatorType.fromString(value);
+                    } catch (IllegalArgumentException e) {
+                        System.err.println("Error: " + e.getMessage());
+                        System.err.println("Defaulting to AUTO mode.");
+                        return SupportCalculatorType.AUTO;
+                    }
+                } else {
+                    // --support (no value) → default to AUTO
+                    return SupportCalculatorType.AUTO;
+                }
+            }
+        }
+
+        // No --support flag found → default to AUTO
+        return SupportCalculatorType.AUTO;
+    }
+
+    /**
+     * Get human-readable description for support calculator type
+     */
+    private static String getSupportCalculatorDescription(SupportCalculatorType type) {
+        switch (type) {
+            case DIRECT:
+                return "Direct Convolution (O(n²) DP)";
+            case RECURSIVE:
+                return "Recursive Convolution (O(n² log n) Sequential)";
+            case PARALLEL:
+                return "Parallel Recursive Convolution (O(n² log n / p))";
+            case FFT:
+                return "FFT Convolution (O(n log² n))";
+            case PARALLEL_FFT:
+                return "Parallel FFT Convolution (O(n log² n / p))";
+            case AUTO:
+                return "Auto (based on parallelization mode)";
+            default:
+                return type.toString();
+        }
     }
 
 }

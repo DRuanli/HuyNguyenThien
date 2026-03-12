@@ -28,8 +28,6 @@ public class MiningConfiguration {
     /** Parallelization mode (controls which parts run in parallel) */
     private final ParallelizationMode parallelizationMode;
 
-    //private final PruningConfiguration pruningConfig;
-
     /**
      * Private constructor called by Builder to create an immutable configuration instance.
      *
@@ -42,7 +40,6 @@ public class MiningConfiguration {
         this.algorithmName = builder.algorithmName;
         this.verbose = builder.verbose;
         this.parallelizationMode = builder.parallelizationMode;
-        //this.pruningConfig = builder.pruningConfig;
     }
 
     /**
@@ -86,8 +83,6 @@ public class MiningConfiguration {
      * @return the parallelization mode (NONE, PHASE1_ONLY, SUPPORT_ONLY, or FULL)
      */
     public ParallelizationMode getParallelizationMode() { return parallelizationMode; }
-
-    //public PruningConfiguration getPruningConfig() { return pruningConfig; }
 
     /**
      * Returns a string representation of this configuration.
@@ -133,8 +128,6 @@ public class MiningConfiguration {
 
         /** Default parallelization mode (fully sequential) */
         private ParallelizationMode parallelizationMode = ParallelizationMode.DEFAULT;
-
-        //private PruningConfiguration pruningConfig = PruningConfiguration.allEnabled();
 
         /**
          * Sets the path to the uncertain database file to be mined.
@@ -201,11 +194,6 @@ public class MiningConfiguration {
             this.parallelizationMode = mode;
             return this;
         }
-
-        //public Builder pruningConfig(PruningConfiguration config) {
-        //    this.pruningConfig = config;
-        //    return this;
-        //}
 
         /**
          * Validates all configuration parameters and builds an immutable MiningConfiguration instance.

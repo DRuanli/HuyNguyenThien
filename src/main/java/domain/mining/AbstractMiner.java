@@ -16,9 +16,7 @@ import java.util.stream.IntStream;
 /**
  * AbstractMiner - Template Method Pattern for mining algorithms.
  *
- * ═══════════════════════════════════════════════════════════════════════════════
- * TEMPLATE METHOD PATTERN
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ==================== TEMPLATE METHOD PATTERN ====================
  *
  * The Template Method Pattern defines the skeleton of an algorithm in a base class,
  * letting subclasses override specific steps without changing structure.
@@ -35,9 +33,7 @@ import java.util.stream.IntStream;
  *       └── ClosureAwareTopKMiner (subclass)
  *             └── Implements all abstract methods
  *
- * ═══════════════════════════════════════════════════════════════════════════════
- * THREE-PHASE MINING ARCHITECTURE
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ==================== THREE-PHASE MINING ARCHITECTURE ====================
  *
  * Phase 1: COMPUTE ALL 1-ITEMSETS
  *   - Scan database to compute support for all single items
@@ -61,10 +57,8 @@ import java.util.stream.IntStream;
  */
 public abstract class AbstractMiner {
 
-    // ════════════════════════════════════════════════════════════════════════════
-    // IMMUTABLE CONFIGURATION
+    // ==================== IMMUTABLE CONFIGURATION ====================
     // These define the mining problem and should never change after construction
-    // ════════════════════════════════════════════════════════════════════════════
     /**
      * The uncertain database to mine.
      * Contains transactions with probabilistic item occurrences.
@@ -108,10 +102,14 @@ public abstract class AbstractMiner {
      */
     private final ParallelizationMode parallelizationMode;
 
-    // ════════════════════════════════════════════════════════════════════════════
-    // MINING STATE (protected - direct subclass access for simplicity)
+    /**
+     * Minimum number of frequent items to justify parallel extension generation.
+     * Below this threshold, sequential processing is more efficient due to overhead.
+     */
+    private static final int PARALLEL_EXTENSION_THRESHOLD = 50;
+
+    // ==================== MINING STATE (protected - direct subclass access for simplicity) ====================
     // These are working data structures that subclasses need to manipulate
-    // ════════════════════════════════════════════════════════════════════════════
 
     /**
      * Top-K heap that maintains the k best patterns found so far.
@@ -257,11 +255,9 @@ public abstract class AbstractMiner {
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════════════
-    // PROTECTED GETTERS FOR IMMUTABLE CONFIGURATION
+    // ==================== PROTECTED GETTERS FOR IMMUTABLE CONFIGURATION ====================
     // Provide controlled read-only access to private final fields
     // These are final - subclasses cannot override them
-    // ════════════════════════════════════════════════════════════════════════════
 
     /**
      * Get the uncertain database being mined.
@@ -312,9 +308,7 @@ public abstract class AbstractMiner {
     }
 
     /**
-     * ═══════════════════════════════════════════════════════════════════════════
-     * TEMPLATE METHOD: Defines the mining algorithm skeleton
-     * ═══════════════════════════════════════════════════════════════════════════
+     * ==================== TEMPLATE METHOD: Defines the mining algorithm skeleton ====================
      *
      * This method is FINAL - subclasses cannot override it.
      * The algorithm structure is fixed; only specific steps vary.
@@ -330,9 +324,7 @@ public abstract class AbstractMiner {
      * @return list of top-K frequent closed itemsets
      */
     public final List<FrequentItemset> mine() {
-        // ═══════════════════════════════════════════════════════════════
-        // PHASE 1: Compute ALL 1-itemsets (no filtering)
-        // ═══════════════════════════════════════════════════════════════
+        // ==================== PHASE 1: Compute ALL 1-itemsets (no filtering) ====================
         long start1 = System.nanoTime();
 
         // Subclass implements this: scans database for frequent single items
@@ -340,9 +332,7 @@ public abstract class AbstractMiner {
 
         long phase1Time = (System.nanoTime() - start1) / 1_000_000;  // Convert to ms
 
-        // ═══════════════════════════════════════════════════════════════
-        // PHASE 2: Initialize data structures and fill Top-K
-        // ═══════════════════════════════════════════════════════════════
+        // ==================== PHASE 2: Initialize data structures and fill Top-K ====================
         long start2 = System.nanoTime();
 
         // Subclass implements this: builds PQ, caches, etc.
@@ -350,9 +340,7 @@ public abstract class AbstractMiner {
 
         long phase2Time = (System.nanoTime() - start2) / 1_000_000;
 
-        // ═══════════════════════════════════════════════════════════════
-        // PHASE 3: Recursive mining (main loop)
-        // ═══════════════════════════════════════════════════════════════
+        // ==================== PHASE 3: Recursive mining (main loop) ====================
         long start3 = System.nanoTime();
 
         // Subclass implements this: priority queue processing, closure checking
@@ -360,15 +348,11 @@ public abstract class AbstractMiner {
 
         long phase3Time = (System.nanoTime() - start3) / 1_000_000;
 
-        // ═══════════════════════════════════════════════════════════════
-        // RETURN: Get final top-K results
-        // ═══════════════════════════════════════════════════════════════
+        // ==================== RETURN: Get final top-K results ====================
         return getTopKResults();
     }
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // SHARED CONCRETE METHODS - Implemented in base class (moved from subclasses)
-    // ═══════════════════════════════════════════════════════════════════════════
+    // ==================== SHARED CONCRETE METHODS - Implemented in base class (moved from subclasses) ====================
 
     /**
      * Phase 1: Computes support and probability for all single-item patterns.
@@ -793,7 +777,7 @@ public abstract class AbstractMiner {
      */
     protected ClosureCheckResult checkClosureAndGenerateExtensions(FrequentItemset candidate, int threshold) {
         // Dispatch to parallel or sequential implementation
-        if (parallelizationMode.isPhase3ExtensionGenerationParallel() && frequentItemCount > 50) {
+        if (parallelizationMode.isPhase3ExtensionGenerationParallel() && frequentItemCount > PARALLEL_EXTENSION_THRESHOLD) {
             return checkClosureAndGenerateExtensionsParallel(candidate, threshold);
         } else {
             return checkClosureAndGenerateExtensionsSequential(candidate, threshold);

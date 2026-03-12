@@ -2,9 +2,9 @@ package infrastructure.factory;
 
 import application.config.MiningConfiguration;
 import application.config.ParallelizationMode;
+import application.config.SupportCalculatorType;
 import domain.mining.AbstractMiner;
 import domain.mining.TUFCI;
-import domain.mining.PipelineTUFCI;
 import domain.support.SupportCalculator;
 import infrastructure.persistence.UncertainDatabase;
 
@@ -66,6 +66,26 @@ public class MinerFactory {
         ParallelizationMode mode
     ) {
         return new TUFCI(database, tau, k, mode);
+    }
+
+    /**
+     * Create TUFCI Miner with specified parallelization mode and support calculator type.
+     *
+     * @param database uncertain database to mine
+     * @param tau probability threshold (0 < tau <= 1)
+     * @param k number of top itemsets to return
+     * @param mode parallelization mode
+     * @param supportType support calculator type
+     * @return configured TUFCI instance
+     */
+    public static TUFCI createMiner(
+        UncertainDatabase database,
+        double tau,
+        int k,
+        ParallelizationMode mode,
+        SupportCalculatorType supportType
+    ) {
+        return new TUFCI(database, tau, k, mode, supportType);
     }
 
     /**

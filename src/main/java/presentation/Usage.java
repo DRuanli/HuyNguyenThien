@@ -5,7 +5,17 @@ import domain.observer.PhaseTimingObserver;
 
 import java.util.List;
 
+/**
+ * Utility class for displaying usage information and mining results.
+ * Provides formatted output for command-line interface including
+ * usage instructions, performance metrics, and top-K patterns.
+ *
+ * @author Dang Nguyen Le, Gia Huy Vo
+ */
 public class Usage {
+    /** Maximum number of patterns to display in results output */
+    private static final int MAX_DISPLAY_COUNT = 50;
+
     public static void printUsage() {
         System.out.println("╔═══════════════════════════════════════════════════════════╗");
         System.out.println("║          TUFCI: Top-K Uncertain Frequent Closed           ║");
@@ -42,7 +52,7 @@ public class Usage {
         }
 
         // Determine how many patterns to display (max 50 for readability)
-        int displayCount = Math.min(results.size(), 50);
+        int displayCount = Math.min(results.size(), MAX_DISPLAY_COUNT);
 
         // Print header
         System.out.println("╔═══════════════════════════════════════════════════════════╗");

@@ -3,9 +3,7 @@ package application.config;
 /**
  * Parallelization mode enumeration for controlling which parts of the mining algorithm run in parallel.
  *
- * ═══════════════════════════════════════════════════════════════════════════════
- * PARALLELIZATION LEVELS
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ==================== PARALLELIZATION LEVELS ====================
  *
  * The TUFCI algorithm has multiple opportunities for parallelization:
  *
@@ -28,7 +26,6 @@ package application.config;
  *    - Parallel extension generation and closure checking
  *    - Location: AbstractMiner.checkClosureAndGenerateExtensionsParallel()
  *
- * ═══════════════════════════════════════════════════════════════════════════════
  *
  * @author Dang Nguyen Le, Gia Huy Vo
  */
@@ -135,29 +132,7 @@ public enum ParallelizationMode {
      * - Multi-core CPU (8+ cores)
      * - Large, complex datasets
      */
-    FULL_PARALLEL("fullParallel", "Full parallelization (all components)"),
-
-    /**
-     * PIPELINE: Pipeline parallelism - overlap phases using multi-stage pipeline.
-     *
-     * Architecture:
-     * - Stage 1: Generate candidates from priority queue
-     * - Stage 2: Compute support for candidates
-     * - Stage 3: Check closure and generate extensions
-     * - Stage 4: Add to Top-K and feed extensions back
-     *
-     * Stages run concurrently using producer-consumer queues, allowing:
-     * - Different candidates to be at different stages simultaneously
-     * - Better CPU utilization by overlapping I/O and computation
-     * - Reduced idle time compared to sequential phase execution
-     *
-     * Use when:
-     * - Multi-core CPU (4+ cores recommended)
-     * - Want to overlap different mining stages
-     * - Maximum throughput for large search spaces
-     * - Research comparison of parallelization strategies
-     */
-    PIPELINE("pipeline", "Pipeline parallelism (v2 - overlapped stages)");
+    FULL_PARALLEL("fullParallel", "Full parallelization (all components)");
 
     /** Command-line argument value */
     private final String cliValue;
@@ -226,7 +201,7 @@ public enum ParallelizationMode {
 
         // Invalid value - throw exception with helpful message
         throw new IllegalArgumentException(
-            String.format("Invalid parallelization mode: '%s'. Valid options: default, onlyPhase1, onlyPhase2, onlyPhase3, onlyClosure, onlySupport, fullParallel, pipeline",
+            String.format("Invalid parallelization mode: '%s'. Valid options: default, onlyPhase1, onlyPhase2, onlyPhase3, onlyClosure, onlySupport, fullParallel",
                          cliValue)
         );
     }
@@ -246,7 +221,7 @@ public enum ParallelizationMode {
      * @return true if support calculator parallelization is enabled
      */
     public boolean isSupportCalculatorParallel() {
-        return this == ONLY_PHASE2 || this == ONLY_PHASE3 || this == ONLY_SUPPORT || this == FULL_PARALLEL || this == PIPELINE;
+        return this == ONLY_PHASE2 || this == ONLY_PHASE3 || this == ONLY_SUPPORT || this == FULL_PARALLEL;
     }
 
     /**
@@ -265,15 +240,6 @@ public enum ParallelizationMode {
      */
     public boolean isPhase3ExtensionGenerationParallel() {
         return this == ONLY_PHASE3 || this == ONLY_CLOSURE || this == FULL_PARALLEL;
-    }
-
-    /**
-     * Check if pipeline parallelism is enabled.
-     *
-     * @return true if pipeline parallelism mode is active
-     */
-    public boolean isPipelineMode() {
-        return this == PIPELINE;
     }
 
     @Override
