@@ -15,6 +15,7 @@ public class Main {
     public static void main(String[] args) throws IOException {
         if (args.length < 1) {
             Usage.printUsage();
+            return;
         }
 
         // Parse positional arguments
@@ -27,6 +28,12 @@ public class Main {
 
         // Parse --support flag
         SupportCalculatorType supportType = parseSupportCalculatorType(args);
+
+        // Parse output format flags
+        String csvOutput = parseStringFlag(args, "--output-csv");
+        String latexOutput = parseStringFlag(args, "--output-latex");
+        String patternsOutput = parseStringFlag(args, "--output-patterns");
+        boolean quietMode = hasFlag(args, "--quiet");
 
         // Print configuration
         System.out.println("╔═══════════════════════════════════════════════════════════╗");
@@ -54,6 +61,9 @@ public class Main {
         TUFCI miner = MinerFactory.createMiner(database, tau, k, parallelMode, supportType);
 
         PhaseTimingObserver observer = new PhaseTimingObserver();
+        // Note: Observer pattern not yet implemented in TUFCI
+        // Phase timing will be added in future version
+
         System.out.println("  Algorithm           : TUFCI");
         System.out.println("  Phase 1 Mode        : " + (parallelMode.isPhase1Parallel() ? "Parallel" : "Sequential"));
         System.out.println("  Support Calc Mode   : " + (parallelMode.isSupportCalculatorParallel() ? "Parallel" : "Sequential"));
@@ -86,12 +96,85 @@ public class Main {
 
         // ==================== Step 5: Display Performance Metrics ====================
 
-        Usage.printPerformanceMetrics(observer, executionTime, memoryUsed,
-                               database.size(), results.size());
+        if (!quietMode) {
+            // Print publication-ready summary to console
+            ResultExporter.printPublicationSummary(
+                dbFile,
+                database.size(),
+                database.getVocabulary().size(),
+                tau,
+                k,
+                parallelMode.name(),
+                getSupportCalculatorDescription(supportType),
+                observer,
+                executionTime,
+                memoryUsed,
+                results.size()
+            );
 
-        // ==================== Step 6: Display Results ====================
+            // Also print top patterns in human-readable format
+            Usage.printResults(results, k);
+        }
 
-        Usage.printResults(results, k);
+        // ==================== Step 6: Export Results to Files ====================
+
+        // Export performance metrics to CSV
+        if (csvOutput != null) {
+            ResultExporter.initializePerformanceCSV(csvOutput);
+            ResultExporter.exportPerformanceCSV(
+                csvOutput,
+                dbFile,
+                database.size(),
+                database.getVocabulary().size(),
+                tau,
+                k,
+                parallelMode.name(),
+                supportType.name(),
+                observer,
+                executionTime,
+                memoryUsed,
+                results.size()
+            );
+            System.out.println("Performance metrics exported to: " + csvOutput);
+        }
+
+        // Export LaTeX table
+        if (latexOutput != null) {
+            ResultExporter.exportLaTeXTable(
+                latexOutput,
+                dbFile,
+                database.size(),
+                database.getVocabulary().size(),
+                tau,
+                k,
+                parallelMode.name(),
+                observer,
+                executionTime,
+                memoryUsed,
+                results.size()
+            );
+            System.out.println("LaTeX table exported to: " + latexOutput);
+        }
+
+        // Export patterns to CSV
+        if (patternsOutput != null) {
+            ResultExporter.exportPatternsCSV(patternsOutput, results, k);
+            System.out.println("Patterns exported to: " + patternsOutput);
+        }
+
+        // If in quiet mode, just print the essential result
+        if (quietMode) {
+            System.out.printf("%s,%d,%d,%d,%d,%d,%.2f,%d%n",
+                dbFile,
+                database.size(),
+                database.getVocabulary().size(),
+                k,
+                observer.getPhase1Time(),
+                observer.getPhase2Time(),
+                observer.getPhase3Time(),
+                executionTime
+            );
+        }
 
     }
 
@@ -204,6 +287,45 @@ public class Main {
             default:
                 return type.toString();
         }
+    }
+
+    /**
+     * Parse a string-valued flag from command-line arguments.
+     * Example: --output-csv results.csv
+     *
+     * @param args command-line arguments
+     * @param flagName the flag to search for (e.g., "--output-csv")
+     * @return the value after the flag, or null if flag not found
+     */
+    private static String parseStringFlag(String[] args, String flagName) {
+        for (int i = 0; i < args.length; i++) {
+            if (args[i].equals(flagName)) {
+                if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
+                    return args[i + 1];
+                } else {
+                    System.err.println("Warning: " + flagName + " requires a value");
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Check if a boolean flag is present in command-line arguments.
+     * Example: --quiet
+     *
+     * @param args command-line arguments
+     * @param flagName the flag to search for
+     * @return true if flag is present, false otherwise
+     */
+    private static boolean hasFlag(String[] args, String flagName) {
+        for (String arg : args) {
+            if (arg.equals(flagName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

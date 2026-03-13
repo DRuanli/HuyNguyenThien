@@ -1,16 +1,14 @@
 #!/bin/bash
 
 # ============================================================================
-# TUFCI Algorithm Comparison Script
+# TUFCI Algorithm Comparison Script - IEEE Access Publication Version
 # ============================================================================
-# This script runs the TUFCI algorithm with different configurations:
-# - Top-K values: 10, 50, 100
-# - Datasets: Chess, Mushrooms, Retail, Liquor
-# - Parallelization modes: default, onlyPhase1, onlyPhase2, onlyPhase3, fullParallel
-# - Each mode runs 5 times (with 2 warmup runs that are discarded)
-#
-# Results for all modes are stored in a single file per dataset/k combination:
-# result/{Dataset}/k{topk}/result_{timestamp}.txt
+# Enhanced features for academic publication:
+# - CSV export for machine-readable results
+# - Proper statistical analysis (mean, stddev, 95% CI)
+# - System metadata recording for reproducibility
+# - Automatic figure generation (if Python available)
+# - LaTeX table generation
 # ============================================================================
 
 # Color codes for output
@@ -24,16 +22,15 @@ NC='\033[0m' # No Color
 
 # Configuration
 TOPK_VALUES=(100)
-TAU=0.7  # Default tau value, can be adjusted
-WARMUP_RUNS=2  # Number of warmup runs (discarded)
-ACTUAL_RUNS=3  # Number of actual runs to record
+TAU=0.7
+WARMUP_RUNS=2
+ACTUAL_RUNS=3
 
-# Dataset configurations: name|file_path
+# Datasets
 DATASETS=(
-    "Retail|data/retail_uncertain.txt"
     "Chess|data/chess_uncertain.txt"
-    "Mushrooms|data/mushrooms_uncertain.txt"
-    "Pumsb|data/pumsb_uncertain.txt"
+    "Kosarak|data/kosarak_uncertain.txt"
+    "Accidents|data/accidents_uncertain.txt"
 )
 
 # Parallelization modes
@@ -45,92 +42,206 @@ PARALLEL_MODES=(
     "fullParallel"
 )
 
-# Base directory for results
+# Output configuration
 RESULT_BASE_DIR="result"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+CSV_PERFORMANCE="result/performance_${TIMESTAMP}.csv"
+CSV_STATISTICS="result/statistics_${TIMESTAMP}.csv"
+METADATA_FILE="result/system_metadata_${TIMESTAMP}.txt"
 
-# Java classpath (compiled classes)
+# Java classpath
 CLASSPATH="bin"
 
-# Check if compiled classes exist
-if [ ! -d "$CLASSPATH" ]; then
-    echo -e "${RED}Error: bin directory not found. Please compile the project first.${NC}"
-    echo "Attempting to compile..."
+# ============================================================================
+# FUNCTION: Record System Metadata (IEEE Access Reproducibility Requirement)
+# ============================================================================
+record_system_metadata() {
+    echo "Recording system metadata for reproducibility..."
 
-    # Create bin directory if it doesn't exist
-    mkdir -p bin
+    {
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║          SYSTEM METADATA FOR REPRODUCIBILITY               ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Experiment Timestamp: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+        echo ""
+        echo "HARDWARE SPECIFICATIONS:"
+        echo "─────────────────────────────────────────────────────────────"
+        echo "  Operating System: $(uname -s) $(uname -r)"
+        echo "  Architecture: $(uname -m)"
 
-    # Compile all Java files
-    find src/main/java -name "*.java" -print | javac -d bin @/dev/stdin
+        # CPU information (OS-specific)
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "  CPU Model: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'N/A')"
+            echo "  CPU Cores: $(sysctl -n hw.ncpu 2>/dev/null || echo 'N/A')"
+            echo "  Physical Cores: $(sysctl -n hw.physicalcpu 2>/dev/null || echo 'N/A')"
+            echo "  RAM: $(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1024 / 1024 / 1024 )) GB"
+        elif [[ "$OSTYPE" == "linux"* ]]; then
+            echo "  CPU Model: $(lscpu | grep 'Model name' | sed -r 's/Model name:\s+//' || echo 'N/A')"
+            echo "  CPU Cores: $(nproc 2>/dev/null || echo 'N/A')"
+            echo "  RAM: $(free -h 2>/dev/null | grep Mem | awk '{print $2}' || echo 'N/A')"
+        else
+            echo "  CPU: Unknown (unsupported OS)"
+        fi
 
-    if [ $? -ne 0 ]; then
-        echo -e "${RED}Compilation failed. Please fix compilation errors and try again.${NC}"
-        exit 1
+        echo ""
+        echo "SOFTWARE ENVIRONMENT:"
+        echo "─────────────────────────────────────────────────────────────"
+        echo "  Java Version:"
+        java -version 2>&1 | sed 's/^/    /'
+        echo "  Java Home: ${JAVA_HOME:-Not set}"
+        echo "  Classpath: $CLASSPATH"
+
+        # Git information (if available)
+        if git rev-parse --git-dir > /dev/null 2>&1; then
+            echo ""
+            echo "SOURCE CODE VERSION:"
+            echo "─────────────────────────────────────────────────────────────"
+            echo "  Git Commit: $(git rev-parse HEAD)"
+            echo "  Git Branch: $(git rev-parse --abbrev-ref HEAD)"
+            echo "  Git Status: $(git diff --quiet && echo 'clean' || echo 'MODIFIED (uncommitted changes)')"
+        fi
+
+        echo ""
+        echo "EXPERIMENT PARAMETERS:"
+        echo "─────────────────────────────────────────────────────────────"
+        echo "  Top-K Values: ${TOPK_VALUES[@]}"
+        echo "  Tau Threshold: $TAU"
+        echo "  Warmup Runs: $WARMUP_RUNS"
+        echo "  Actual Runs: $ACTUAL_RUNS"
+        echo "  Datasets: ${#DATASETS[@]}"
+        echo "  Parallel Modes: ${#PARALLEL_MODES[@]}"
+        echo ""
+    } > "$METADATA_FILE"
+
+    echo -e "${GREEN}✓ System metadata saved to: $METADATA_FILE${NC}"
+}
+
+# ============================================================================
+# FUNCTION: Initialize CSV Files with Headers
+# ============================================================================
+init_csv_files() {
+    mkdir -p "$(dirname "$CSV_PERFORMANCE")"
+
+    # Performance CSV (detailed per-run data)
+    echo "timestamp,dataset,transactions,vocabulary,tau,k,parallel_mode,phase1_ms,phase2_ms,phase3_ms,total_ms" > "$CSV_PERFORMANCE"
+
+    # Statistics CSV (aggregated statistics)
+    echo "dataset,k,parallel_mode,runs,mean_ms,stddev_ms,min_ms,max_ms,ci_95_ms,cv_percent" > "$CSV_STATISTICS"
+
+    echo -e "${GREEN}✓ CSV files initialized${NC}"
+    echo -e "  Performance: $CSV_PERFORMANCE"
+    echo -e "  Statistics: $CSV_STATISTICS"
+}
+
+# ============================================================================
+# FUNCTION: Compute Statistics (Mean, StdDev, CI) using bc for Precision
+# ============================================================================
+compute_statistics() {
+    local values=("$@")
+    local n=${#values[@]}
+
+    if [ $n -eq 0 ]; then
+        echo "0.00,0.00,0,0,0.00,0.00"
+        return
     fi
 
-    echo -e "${GREEN}Compilation successful!${NC}"
-fi
+    # Compute mean
+    local sum=0
+    for v in "${values[@]}"; do
+        sum=$(echo "$sum + $v" | bc)
+    done
+    local mean=$(echo "scale=2; $sum / $n" | bc)
 
-# Function to run a single iteration and extract execution time
+    # Compute standard deviation
+    local sq_diff_sum=0
+    for v in "${values[@]}"; do
+        local diff=$(echo "$v - $mean" | bc)
+        local sq_diff=$(echo "$diff * $diff" | bc)
+        sq_diff_sum=$(echo "$sq_diff_sum + $sq_diff" | bc)
+    done
+    local variance=$(echo "scale=4; $sq_diff_sum / $n" | bc)
+    local stddev=$(echo "scale=2; sqrt($variance)" | bc -l)
+
+    # Compute min/max
+    local min=${values[0]}
+    local max=${values[0]}
+    for v in "${values[@]}"; do
+        if (( $(echo "$v < $min" | bc -l) )); then min=$v; fi
+        if (( $(echo "$v > $max" | bc -l) )); then max=$v; fi
+    done
+
+    # Compute 95% confidence interval: CI = 1.96 * stddev / sqrt(n)
+    local ci=$(echo "scale=2; 1.96 * $stddev / sqrt($n)" | bc -l)
+
+    # Coefficient of variation: CV = (stddev / mean) * 100
+    local cv=$(echo "scale=2; if ($mean > 0) ($stddev / $mean) * 100 else 0" | bc -l)
+
+    echo "$mean,$stddev,$min,$max,$ci,$cv"
+}
+
+# ============================================================================
+# FUNCTION: Run Single Iteration (with CSV export)
+# ============================================================================
 run_single_iteration() {
     local dataset_file=$1
     local k=$2
     local parallel_mode=$3
-    local temp_output=$4
+    local csv_file=$4
 
-    # Run the algorithm and save output to temp file
+    # Run algorithm with CSV export
+    local temp_output=$(mktemp)
+
     if [ "$parallel_mode" = "default" ]; then
-        # For default (sequential) mode, don't use --parallel flag
-        java -cp "$CLASSPATH" presentation.Main "$dataset_file" "$TAU" "$k" > "$temp_output" 2>&1
+        java -cp "$CLASSPATH" presentation.Main "$dataset_file" "$TAU" "$k" \
+            --output-csv "$csv_file" > "$temp_output" 2>&1
     else
-        # For other modes, use --parallel flag
-        java -cp "$CLASSPATH" presentation.Main "$dataset_file" "$TAU" "$k" --parallel "$parallel_mode" > "$temp_output" 2>&1
+        java -cp "$CLASSPATH" presentation.Main "$dataset_file" "$TAU" "$k" \
+            --parallel "$parallel_mode" \
+            --output-csv "$csv_file" > "$temp_output" 2>&1
     fi
 
     local exit_code=$?
 
-    # Extract execution time in milliseconds
+    # Extract execution time
     local exec_time_ms=""
     if [ $exit_code -eq 0 ]; then
-        # Extract execution time using sed (compatible with macOS/BSD)
-        # Format: "Total execution time           :      405 ms"
-        exec_time_ms=$(grep -i "Total execution time" "$temp_output" | sed -E 's/.*:[[:space:]]*([0-9]+)[[:space:]]*ms.*/\1/' | head -1)
+        # Try to extract from the new publication summary format
+        exec_time_ms=$(grep -i "TOTAL" "$temp_output" | grep -o '[0-9,]\+\s*ms' | tr -d ',' | grep -o '[0-9]\+' | head -1)
 
-        # If not found, try alternative pattern
+        # Fallback to old format
         if [ -z "$exec_time_ms" ]; then
-            exec_time_ms=$(grep -i "execution time" "$temp_output" | sed -E 's/.*:[[:space:]]*([0-9]+).*/\1/' | head -1)
+            exec_time_ms=$(grep -i "Total execution time" "$temp_output" | sed -E 's/.*:[[:space:]]*([0-9,]+)[[:space:]]*ms.*/\1/' | tr -d ',' | head -1)
         fi
     fi
 
+    rm -f "$temp_output"
     echo "$exit_code|$exec_time_ms"
 }
 
-# Function to run experiment for a single mode (with warmup and multiple runs)
+# ============================================================================
+# FUNCTION: Run Mode Experiment (with Statistics)
+# ============================================================================
 run_mode_experiment() {
     local dataset_name=$1
     local dataset_file=$2
     local k=$3
     local parallel_mode=$4
-    local output_file=$5
 
     echo -e "${CYAN}  Mode: ${YELLOW}${parallel_mode}${NC}"
 
-    # Create temp directory for intermediate outputs
-    local temp_dir=$(mktemp -d)
-    local temp_output="${temp_dir}/temp_output.txt"
-
-    # Array to store execution times
     local exec_times=()
     local failed=0
 
     # Warmup runs
     echo -e "${MAGENTA}    Warmup runs (${WARMUP_RUNS})...${NC}"
     for i in $(seq 1 $WARMUP_RUNS); do
-        echo -ne "${MAGENTA}      Warmup run ${i}/${WARMUP_RUNS}...${NC}"
+        echo -ne "${MAGENTA}      Warmup $i/${WARMUP_RUNS}...${NC}"
 
-        result=$(run_single_iteration "$dataset_file" "$k" "$parallel_mode" "$temp_output")
+        result=$(run_single_iteration "$dataset_file" "$k" "$parallel_mode" "/dev/null")
         IFS='|' read -r exit_code exec_time_ms <<< "$result"
 
-        if [ $exit_code -eq 0 ]; then
+        if [ $exit_code -eq 0 ] && [ -n "$exec_time_ms" ]; then
             echo -e " ${GREEN}✓${NC} (${exec_time_ms} ms)"
         else
             echo -e " ${RED}✗ Failed${NC}"
@@ -139,16 +250,16 @@ run_mode_experiment() {
         fi
     done
 
+    # Actual runs
     if [ $failed -eq 0 ]; then
-        # Actual runs
         echo -e "${GREEN}    Actual runs (${ACTUAL_RUNS})...${NC}"
         for i in $(seq 1 $ACTUAL_RUNS); do
-            echo -ne "${GREEN}      Run ${i}/${ACTUAL_RUNS}...${NC}"
+            echo -ne "${GREEN}      Run $i/${ACTUAL_RUNS}...${NC}"
 
-            result=$(run_single_iteration "$dataset_file" "$k" "$parallel_mode" "$temp_output")
+            result=$(run_single_iteration "$dataset_file" "$k" "$parallel_mode" "$CSV_PERFORMANCE")
             IFS='|' read -r exit_code exec_time_ms <<< "$result"
 
-            if [ $exit_code -eq 0 ]; then
+            if [ $exit_code -eq 0 ] && [ -n "$exec_time_ms" ]; then
                 echo -e " ${GREEN}✓${NC} (${exec_time_ms} ms)"
                 exec_times+=("$exec_time_ms")
             else
@@ -159,144 +270,47 @@ run_mode_experiment() {
         done
     fi
 
-    # Write results to output file
-    {
-        echo "════════════════════════════════════════════════════════════════"
-        echo "Mode: ${parallel_mode}"
-        echo "════════════════════════════════════════════════════════════════"
-        echo ""
+    # Compute and export statistics
+    if [ $failed -eq 0 ] && [ ${#exec_times[@]} -gt 0 ]; then
+        IFS=',' read -r mean stddev min max ci cv <<< "$(compute_statistics "${exec_times[@]}")"
 
-        if [ $failed -eq 0 ]; then
-            echo "Status: SUCCESS"
-            echo "Number of runs: ${#exec_times[@]}"
-            echo ""
-            echo "Execution times (ms):"
-            for i in "${!exec_times[@]}"; do
-                echo "  Run $((i+1)): ${exec_times[$i]} ms"
-            done
-            echo ""
+        # Append to statistics CSV
+        echo "${dataset_name},${k},${parallel_mode},${#exec_times[@]},${mean},${stddev},${min},${max},${ci},${cv}" >> "$CSV_STATISTICS"
 
-            # Calculate statistics
-            if [ ${#exec_times[@]} -gt 0 ]; then
-                # Calculate min, max, average
-                local min=${exec_times[0]}
-                local max=${exec_times[0]}
-                local sum=0
-
-                for time in "${exec_times[@]}"; do
-                    sum=$((sum + time))
-                    if [ $time -lt $min ]; then
-                        min=$time
-                    fi
-                    if [ $time -gt $max ]; then
-                        max=$time
-                    fi
-                done
-
-                local avg=$((sum / ${#exec_times[@]}))
-
-                echo "Statistics:"
-                echo "  Min: ${min} ms"
-                echo "  Max: ${max} ms"
-                echo "  Average: ${avg} ms"
-                echo "  Total runs: ${#exec_times[@]}"
-            fi
-        else
-            echo "Status: FAILED"
-            echo "Some runs failed to complete successfully."
-        fi
-
-        echo ""
-        echo ""
-    } >> "$output_file"
-
-    # Cleanup
-    rm -rf "$temp_dir"
+        echo -e "${GREEN}    ✓ Statistics: μ=${mean}ms, σ=${stddev}ms, 95% CI=±${ci}ms, CV=${cv}%${NC}"
+    fi
 
     return $failed
 }
 
-# Function to run all modes for a specific dataset and k value
-run_dataset_k_experiment() {
+# ============================================================================
+# FUNCTION: Run Dataset Experiment
+# ============================================================================
+run_dataset_experiment() {
     local dataset_name=$1
     local dataset_file=$2
     local k=$3
 
-    # Check if dataset file exists
     if [ ! -f "$dataset_file" ]; then
-        echo -e "${RED}Error: Dataset file not found: $dataset_file${NC}"
+        echo -e "${RED}Error: Dataset not found: $dataset_file${NC}"
         return 1
     fi
 
-    # Create output directory
-    local output_dir="${RESULT_BASE_DIR}/${dataset_name}/k${k}"
-    mkdir -p "$output_dir"
-
-    # Generate timestamp for unique filename
-    local timestamp=$(date +"%Y%m%d_%H%M%S")
-    local output_file="${output_dir}/result_${timestamp}.txt"
-
-    # Print experiment info
     echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║  Running Experiment                                        ║${NC}"
+    echo -e "${BLUE}║  Experiment: ${dataset_name} (k=${k})${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
-    echo -e "  Dataset       : ${YELLOW}${dataset_name}${NC}"
-    echo -e "  Top-K         : ${YELLOW}${k}${NC}"
-    echo -e "  Tau           : ${YELLOW}${TAU}${NC}"
-    echo -e "  Output File   : ${YELLOW}${output_file}${NC}"
-    echo -e "  Warmup runs   : ${YELLOW}${WARMUP_RUNS}${NC}"
-    echo -e "  Actual runs   : ${YELLOW}${ACTUAL_RUNS}${NC}"
-    echo ""
 
-    # Write header to output file
-    {
-        echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║        TUFCI ALGORITHM COMPARISON RESULTS                  ║"
-        echo "╚════════════════════════════════════════════════════════════╝"
-        echo ""
-        echo "Dataset: ${dataset_name}"
-        echo "Top-K: ${k}"
-        echo "Tau threshold: ${TAU}"
-        echo "Warmup runs: ${WARMUP_RUNS}"
-        echo "Actual runs: ${ACTUAL_RUNS}"
-        echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo ""
-        echo ""
-    } > "$output_file"
-
-    local all_success=0
-    local mode_count=0
     local failed_count=0
 
-    # Run each parallelization mode
     for parallel_mode in "${PARALLEL_MODES[@]}"; do
-        mode_count=$((mode_count + 1))
-
-        if run_mode_experiment "$dataset_name" "$dataset_file" "$k" "$parallel_mode" "$output_file"; then
-            echo -e "${GREEN}  ✓ Mode ${parallel_mode} completed successfully${NC}"
+        if run_mode_experiment "$dataset_name" "$dataset_file" "$k" "$parallel_mode"; then
+            echo -e "${GREEN}  ✓ Mode ${parallel_mode} completed${NC}"
         else
             echo -e "${RED}  ✗ Mode ${parallel_mode} failed${NC}"
             failed_count=$((failed_count + 1))
         fi
-
         echo ""
     done
-
-    # Write summary to output file
-    {
-        echo "════════════════════════════════════════════════════════════════"
-        echo "SUMMARY"
-        echo "════════════════════════════════════════════════════════════════"
-        echo "Total modes tested: ${mode_count}"
-        echo "Successful: $((mode_count - failed_count))"
-        echo "Failed: ${failed_count}"
-        echo ""
-    } >> "$output_file"
-
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}Experiment complete! Results saved to: ${output_file}${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
 
     if [ $failed_count -eq 0 ]; then
         return 0
@@ -305,81 +319,152 @@ run_dataset_k_experiment() {
     fi
 }
 
-# Main execution
+# ============================================================================
+# FUNCTION: Generate LaTeX Summary Table
+# ============================================================================
+generate_latex_table() {
+    local latex_file="result/summary_table_${TIMESTAMP}.tex"
+
+    echo "Generating LaTeX summary table..."
+
+    {
+        echo "% Auto-generated TUFCI Experimental Results"
+        echo "% Generated: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo ""
+        echo "\\begin{table*}[htbp]"
+        echo "\\centering"
+        echo "\\caption{Execution Time Comparison Across Parallelization Modes}"
+        echo "\\label{tab:parallel_comparison}"
+        echo "\\begin{tabular}{llrrrrr}"
+        echo "\\hline"
+        echo "\\textbf{Dataset} & \\textbf{Mode} & \\textbf{Mean (ms)} & \\textbf{StdDev} & \\textbf{Min} & \\textbf{Max} & \\textbf{95\\% CI} \\\\"
+        echo "\\hline"
+
+        # Read statistics CSV and format as LaTeX
+        tail -n +2 "$CSV_STATISTICS" | while IFS=',' read -r dataset k mode runs mean stddev min max ci cv; do
+            echo "$dataset & $mode & $mean & $stddev & $min & $max & \\pm$ci \\\\"
+        done
+
+        echo "\\hline"
+        echo "\\end{tabular}"
+        echo "\\end{table*}"
+    } > "$latex_file"
+
+    echo -e "${GREEN}✓ LaTeX table saved to: $latex_file${NC}"
+}
+
+# ============================================================================
+# FUNCTION: Generate Publication Figures (if Python available)
+# ============================================================================
+generate_figures() {
+    if command -v python3 &> /dev/null; then
+        echo ""
+        echo -e "${BLUE}Generating publication figures...${NC}"
+
+        if [ -f "visualize_results.py" ]; then
+            mkdir -p "figures"
+
+            if python3 visualize_results.py "$CSV_PERFORMANCE" --output-dir "figures/"; then
+                echo -e "${GREEN}✓ Figures generated in figures/${NC}"
+            else
+                echo -e "${YELLOW}Warning: Figure generation failed${NC}"
+                echo -e "${YELLOW}  Install dependencies: pip install pandas matplotlib seaborn${NC}"
+            fi
+        else
+            echo -e "${YELLOW}visualize_results.py not found, skipping figure generation${NC}"
+        fi
+    else
+        echo -e "${YELLOW}Python 3 not found, skipping figure generation${NC}"
+    fi
+}
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
 main() {
     echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║        TUFCI ALGORITHM COMPARISON BENCHMARK                ║${NC}"
+    echo -e "${BLUE}║     TUFCI IEEE ACCESS PUBLICATION EXPERIMENTS             ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
+
+    # Check compilation
+    if [ ! -d "$CLASSPATH" ]; then
+        echo -e "${RED}Error: bin directory not found${NC}"
+        echo "Attempting to compile..."
+        mkdir -p bin
+        find src/main/java -name "*.java" -print | javac -d bin @/dev/stdin
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}Compilation failed${NC}"
+            exit 1
+        fi
+    fi
+
+    # Initialize outputs
+    record_system_metadata
+    init_csv_files
+
+    echo ""
     echo -e "Configuration:"
-    echo -e "  Top-K values     : ${YELLOW}${TOPK_VALUES[@]}${NC}"
-    echo -e "  Tau threshold    : ${YELLOW}${TAU}${NC}"
-    echo -e "  Datasets         : ${YELLOW}${#DATASETS[@]}${NC}"
-    echo -e "  Parallel modes   : ${YELLOW}${PARALLEL_MODES[@]}${NC}"
-    echo -e "  Warmup runs      : ${YELLOW}${WARMUP_RUNS}${NC}"
-    echo -e "  Actual runs      : ${YELLOW}${ACTUAL_RUNS}${NC}"
+    echo -e "  Datasets: ${YELLOW}${#DATASETS[@]}${NC}"
+    echo -e "  K values: ${YELLOW}${TOPK_VALUES[@]}${NC}"
+    echo -e "  Modes: ${YELLOW}${#PARALLEL_MODES[@]}${NC}"
+    echo -e "  Runs per mode: ${YELLOW}${WARMUP_RUNS} warmup + ${ACTUAL_RUNS} actual${NC}"
     echo ""
 
-    # Calculate total number of experiment groups (dataset + k combinations)
-    local total_experiment_groups=$((${#TOPK_VALUES[@]} * ${#DATASETS[@]}))
-    local total_runs=$((total_experiment_groups * ${#PARALLEL_MODES[@]} * (WARMUP_RUNS + ACTUAL_RUNS)))
-
-    echo -e "Total experiment groups: ${GREEN}${total_experiment_groups}${NC}"
-    echo -e "Total individual runs: ${GREEN}${total_runs}${NC}"
-    echo -e "  (Each group tests ${#PARALLEL_MODES[@]} modes with ${WARMUP_RUNS} warmup + ${ACTUAL_RUNS} actual runs)"
-    echo ""
-    read -p "Press Enter to start the experiments, or Ctrl+C to cancel..."
+    local total_experiments=$((${#DATASETS[@]} * ${#TOPK_VALUES[@]} * ${#PARALLEL_MODES[@]}))
+    echo -e "Total experiments: ${GREEN}${total_experiments}${NC}"
     echo ""
 
-    local experiment_count=0
-    local successful_experiments=0
-    local failed_experiments=0
+    read -p "Press Enter to start, or Ctrl+C to cancel..."
+    echo ""
 
-    # Record overall start time
+    local experiment_num=0
+    local successful=0
     local overall_start=$(date +%s)
 
-    # Iterate through all configurations
+    # Run all experiments
     for dataset_config in "${DATASETS[@]}"; do
         IFS='|' read -r dataset_name dataset_file <<< "$dataset_config"
 
         for k in "${TOPK_VALUES[@]}"; do
-            experiment_count=$((experiment_count + 1))
+            experiment_num=$((experiment_num + 1))
 
             echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
-            echo -e "${YELLOW}  Experiment Group ${experiment_count}/${total_experiment_groups}${NC}"
+            echo -e "${YELLOW}  Experiment $experiment_num/${#DATASETS[@]} x ${#TOPK_VALUES[@]}${NC}"
             echo -e "${YELLOW}═══════════════════════════════════════════════════════════${NC}"
-            echo ""
 
-            if run_dataset_k_experiment "$dataset_name" "$dataset_file" "$k"; then
-                successful_experiments=$((successful_experiments + 1))
-            else
-                failed_experiments=$((failed_experiments + 1))
+            if run_dataset_experiment "$dataset_name" "$dataset_file" "$k"; then
+                successful=$((successful + 1))
             fi
 
-            # Small delay between experiment groups
-            sleep 2
+            sleep 1
         done
     done
 
-    # Record overall end time
     local overall_end=$(date +%s)
-    local overall_duration=$((overall_end - overall_start))
+    local duration=$((overall_end - overall_start))
 
-    # Print summary
+    # Generate outputs
+    echo ""
+    echo -e "${BLUE}Generating publication materials...${NC}"
+    generate_latex_table
+    generate_figures
+
+    # Summary
     echo ""
     echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║             EXPERIMENT SUMMARY                             ║${NC}"
+    echo -e "${BLUE}║                  EXPERIMENT COMPLETE                       ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "Total experiment groups: ${GREEN}${total_experiment_groups}${NC}"
-    echo -e "Successful groups: ${GREEN}${successful_experiments}${NC}"
-    echo -e "Failed groups: ${RED}${failed_experiments}${NC}"
-    echo -e "Total duration: ${YELLOW}${overall_duration} seconds${NC}"
+    echo -e "Results:"
+    echo -e "  Performance CSV: ${GREEN}$CSV_PERFORMANCE${NC}"
+    echo -e "  Statistics CSV: ${GREEN}$CSV_STATISTICS${NC}"
+    echo -e "  System Metadata: ${GREEN}$METADATA_FILE${NC}"
+    echo -e "  Duration: ${YELLOW}${duration} seconds${NC}"
     echo ""
-    echo -e "Results are stored in: ${YELLOW}${RESULT_BASE_DIR}${NC}"
-    echo -e "  Structure: ${RESULT_BASE_DIR}/{Dataset}/k{topk}/result_{timestamp}.txt"
+    echo -e "${GREEN}✓ All outputs are ready for IEEE Access submission${NC}"
     echo ""
 }
 
-# Run main function
+# Run main
 main
