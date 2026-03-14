@@ -124,6 +124,12 @@ TUFCI uses a carefully designed parallelization strategy that avoids nested para
 | `fft` | FFT convolution | O(n log² n) | Long transactions |
 | `parallelfft` | Parallel FFT | O(n log² n / p) | Long transactions + multi-core |
 
+**Priority Rule**: When `--parallel` and `--support` flags conflict, the parallelization mode takes precedence. For example:
+- `--parallel onlySupport --support recursive` → Uses **ParallelRecursive** (mode overrides)
+- `--parallel onlyClosure --support parallel` → Uses **Recursive** (avoids nested parallelism)
+
+See `REPRODUCIBILITY.md` for complete override behavior documentation.
+
 ## Datasets
 
 7 real-world datasets included in `data/` directory:

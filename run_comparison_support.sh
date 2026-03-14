@@ -26,18 +26,17 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-TOPK_VALUES=(200 400 600 800 1000)
+TOPK_VALUES=(200)
 TAU=0.7  # Default tau value, can be adjusted
-WARMUP_RUNS=3  # Number of warmup runs (discarded)
-ACTUAL_RUNS=30  # Number of actual runs to record (increased for statistical significance)
+WARMUP_RUNS=2  # Number of warmup runs (discarded)
+ACTUAL_RUNS=3  # Number of actual runs to record (increased for statistical significance)
 PARALLEL_MODE="default"  # Fixed parallelization mode (sequential baseline for fair support calculator comparison)
 
 # Dataset configurations: name|file_path
 DATASETS=(
-    "Chess|processed_data/chess_uncertain.txt"
-    "Mushrooms|processed_data/mushrooms_uncertain.txt"
-    "Retail|processed_data/retail_uncertain.txt"
-    "Liquor|processed_data/liquor_11frequent_uncertain.txt"
+    "Chess|data/chess_uncertain.txt"
+    "Retail|data/retail_uncertain.txt"
+    "Mushrooms|data/mushrooms_uncertain.txt"
 )
 
 # Support calculator variants to test
@@ -83,7 +82,7 @@ run_single_iteration() {
 
     # Run the algorithm with specified parallelization mode and support variant
     java -cp "$CLASSPATH" presentation.Main "$dataset_file" "$TAU" "$k" \
-        --parallel "$PARALLEL_MODE" --support "$support_variant" > "$temp_output" 2>&1
+         --support "$support_variant" > "$temp_output" 2>&1
 
     local exit_code=$?
 

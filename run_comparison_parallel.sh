@@ -21,7 +21,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-TOPK_VALUES=(100 200 300)
+TOPK_VALUES=(100)
 TAU=0.7
 WARMUP_RUNS=2
 ACTUAL_RUNS=2  # Increased for statistical significance (IEEE requirement)

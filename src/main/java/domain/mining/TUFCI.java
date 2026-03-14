@@ -111,24 +111,97 @@ public class TUFCI extends AbstractMiner {
     /**
      * Factory method to create appropriate support calculator based on parallelization mode and support type.
      *
+     * <p><b>Priority Rules:</b></p>
+     * <ol>
+     *   <li>Parallelization mode determines whether support should be parallel or sequential</li>
+     *   <li>When mode conflicts with explicit support type, mode takes precedence with a warning</li>
+     *   <li>Exception: DIRECT is always respected (user explicitly wants the slowest option)</li>
+     * </ol>
+     *
+     * <p><b>Examples:</b></p>
+     * <ul>
+     *   <li>--parallel onlySupport + --support recursive → ParallelRecursive (mode overrides)</li>
+     *   <li>--parallel onlySupport + --support fft → ParallelFFT (mode overrides)</li>
+     *   <li>--parallel onlySupport + --support direct → Direct (respect explicit choice)</li>
+     *   <li>--parallel onlyClosure + --support parallel → Recursive (mode overrides)</li>
+     * </ul>
+     *
      * @param tau probability threshold
      * @param mode parallelization mode
      * @param supportType support calculator type
      * @return appropriate SupportCalculator instance
      */
     private static SupportCalculator createCalculator(double tau, ParallelizationMode mode, SupportCalculatorType supportType) {
-        // If AUTO mode, choose based on parallelization mode
+        boolean modeWantsParallel = mode.isSupportCalculatorParallel();
+
+        // ==================== HANDLE AUTO MODE ====================
         if (supportType == SupportCalculatorType.AUTO) {
-            if (mode.isSupportCalculatorParallel()) {
-                // Use parallel calculator for ONLY_SUPPORT mode only
+            if (modeWantsParallel) {
                 return new ParallelRecursiveConvolutionSupportCalculator(tau);
             } else {
-                // Use sequential calculator for DEFAULT, ONLY_PHASE1, and ONLY_CLOSURE modes
                 return new RecursiveConvolutionSupportCalculator(tau);
             }
         }
 
-        // Otherwise, use the explicitly specified support calculator type
+        // ==================== HANDLE PARALLELIZATION MODE OVERRIDES ====================
+
+        // If mode wants PARALLEL support, override sequential calculators (except DIRECT)
+        if (modeWantsParallel) {
+            if (supportType == SupportCalculatorType.RECURSIVE) {
+                // Override RECURSIVE → PARALLEL
+                System.err.println("INFO: --parallel onlySupport mode requires parallel support calculator.");
+                System.err.println("      Overriding --support recursive to use ParallelRecursiveConvolution.");
+                System.err.println();
+                return new ParallelRecursiveConvolutionSupportCalculator(tau);
+            }
+
+            if (supportType == SupportCalculatorType.FFT) {
+                // Override FFT → PARALLEL_FFT
+                System.err.println("INFO: --parallel onlySupport mode requires parallel support calculator.");
+                System.err.println("      Overriding --support fft to use ParallelFFT.");
+                System.err.println();
+                return new ParallelFFTConvolutionSupportCalculator(tau);
+            }
+
+            if (supportType == SupportCalculatorType.DIRECT) {
+                // Warn but allow DIRECT (explicit user choice for slowest option)
+                System.err.println("WARNING: --parallel onlySupport expects parallel support calculator,");
+                System.err.println("         but --support direct is sequential (O(n²) complexity).");
+                System.err.println("         Using DirectConvolution as explicitly requested.");
+                System.err.println("         Consider removing --support direct for better performance.");
+                System.err.println();
+                return new DirectConvolutionSupportCalculator(tau);
+            }
+
+            // If PARALLEL or PARALLEL_FFT, fall through to normal handling (already parallel)
+        }
+
+        // If mode wants SEQUENTIAL support, override parallel calculators
+        if (!modeWantsParallel) {
+            if (supportType == SupportCalculatorType.PARALLEL) {
+                // Override PARALLEL → RECURSIVE
+                System.err.println("WARNING: Parallelization mode '" + mode.getCliValue() + "' expects sequential support,");
+                System.err.println("         but --support parallel was specified.");
+                System.err.println("         Using RecursiveConvolution to avoid nested parallelism.");
+                System.err.println();
+                return new RecursiveConvolutionSupportCalculator(tau);
+            }
+
+            if (supportType == SupportCalculatorType.PARALLEL_FFT) {
+                // Override PARALLEL_FFT → FFT
+                System.err.println("WARNING: Parallelization mode '" + mode.getCliValue() + "' expects sequential support,");
+                System.err.println("         but --support parallelfft was specified.");
+                System.err.println("         Using sequential FFT to avoid nested parallelism.");
+                System.err.println();
+                return new FFTConvolutionSupportCalculator(tau);
+            }
+
+            // If DIRECT, RECURSIVE, or FFT, fall through to normal handling (already sequential)
+        }
+
+        // ==================== NORMAL EXPLICIT SUPPORT TYPE HANDLING ====================
+        // Reach here when: mode and support type are compatible, or already handled above
+
         switch (supportType) {
             case DIRECT:
                 return new DirectConvolutionSupportCalculator(tau);

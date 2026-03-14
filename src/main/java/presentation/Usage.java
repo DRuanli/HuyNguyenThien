@@ -42,6 +42,10 @@ public class Usage {
         System.out.println("  --support <type>   : Support calculator algorithm (optional)");
         System.out.println("    Types: direct, recursive, parallel, fft, parallelfft, auto");
         System.out.println();
+        System.out.println("  Priority Rule: Parallelization mode overrides support type when incompatible");
+        System.out.println("    Example: --parallel onlySupport --support recursive");
+        System.out.println("             → Uses ParallelRecursive (mode takes precedence)");
+        System.out.println();
         System.out.println("Output Options:");
         System.out.println("  --output-csv <file>      : Export performance metrics to CSV");
         System.out.println("  --output-latex <file>    : Export results as LaTeX table");
