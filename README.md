@@ -54,7 +54,7 @@ find src/main/java -name "*.java" -print | javac -d bin @/dev/stdin
 java -cp bin presentation.Main data/chess_uncertain.txt 0.7 10
 
 # With parallelization
-java -cp bin presentation.Main data/retail_uncertain.txt 0.7 100 --parallel fullParallel
+java -cp bin presentation.Main data/retail_uncertain.txt 0.7 100 --parallel onlySupport
 
 # With specific support calculator
 java -cp bin presentation.Main data/mushrooms_uncertain.txt 0.7 50 --support fft
@@ -103,15 +103,16 @@ Rank  Itemset                    Support  Probability
 
 ## Parallelization Modes
 
+TUFCI uses a carefully designed parallelization strategy that avoids nested parallelism for optimal performance:
+
 | Mode | Description | Best For |
 |------|-------------|----------|
-| `default` | Fully sequential | Baseline comparison |
-| `onlyPhase1` | Parallel singleton computation | Small K values |
-| `onlyPhase2` | Parallel initialization | Dense databases |
-| `onlyPhase3` | Parallel extension generation | Large K values |
-| `onlyClosure` | Parallel closure checking | Complex patterns |
-| `onlySupport` | Parallel support calculator | Long transactions |
-| `fullParallel` | Maximum parallelization | Large datasets, many cores |
+| `default` | Fully sequential | Baseline comparison, single-core systems |
+| `onlyPhase1` | Parallel singleton computation | Large vocabularies (many unique items) |
+| `onlyClosure` | Parallel closure checking (Phase 2 & 3) | Complex pattern spaces, large K values |
+| `onlySupport` | Parallel support calculator (Fork/Join) | Dense transactions, deep itemsets |
+
+**Design Philosophy**: Each mode parallelizes ONE component at a time. This avoids nested parallelism (parallel streams calling parallel calculators), which causes thread contention and degrades performance. Earlier versions included combined modes (onlyPhase2, onlyPhase3, fullParallel), but these were removed after experiments showed they performed worse than single-level parallelization.
 
 ## Support Calculators
 

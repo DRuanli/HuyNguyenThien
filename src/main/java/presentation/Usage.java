@@ -32,8 +32,11 @@ public class Usage {
         System.out.println();
         System.out.println("Parallelization Options:");
         System.out.println("  --parallel <mode>  : Parallelization strategy (optional)");
-        System.out.println("    Modes: default, onlyPhase1, onlyPhase2, onlyPhase3,");
-        System.out.println("           onlyClosure, onlySupport, fullParallel");
+        System.out.println("    Modes: default     - Fully sequential execution (baseline)");
+        System.out.println("           onlyPhase1  - Parallel Phase 1 only (singleton computations)");
+        System.out.println("           onlyClosure - Parallel closure checking (Phase 2 & 3)");
+        System.out.println("           onlySupport - Parallel support calculator only");
+        System.out.println("    Note: Modes avoid nested parallelism for optimal performance");
         System.out.println();
         System.out.println("Support Calculator Options:");
         System.out.println("  --support <type>   : Support calculator algorithm (optional)");
@@ -51,11 +54,11 @@ public class Usage {
         System.out.println();
         System.out.println("  # With parallelization");
         System.out.println("  java -cp bin presentation.Main data/retail_uncertain.txt 0.7 100 \\");
-        System.out.println("       --parallel fullParallel");
+        System.out.println("       --parallel onlyClosure");
         System.out.println();
         System.out.println("  # Export results for publication");
         System.out.println("  java -cp bin presentation.Main data/retail_uncertain.txt 0.7 100 \\");
-        System.out.println("       --parallel fullParallel \\");
+        System.out.println("       --parallel onlySupport \\");
         System.out.println("       --output-csv results/performance.csv \\");
         System.out.println("       --output-patterns results/patterns.csv \\");
         System.out.println("       --output-latex results/table.tex");

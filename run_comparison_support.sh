@@ -4,7 +4,7 @@
 # TUFCI Support Calculator Comparison Script
 # ============================================================================
 # This script tests different support calculator variants:
-# - All runs use --parallel fullParallel (full parallelization mode)
+# - All runs use --parallel default (sequential baseline for fair comparison)
 # - Only the support calculator type varies:
 #   * direct (DirectConvolutionSupport) - O(n²) DP
 #   * recursive (RecursiveConvolutionSupport) - O(n² log n) sequential
@@ -28,9 +28,9 @@ NC='\033[0m' # No Color
 # Configuration
 TOPK_VALUES=(200 400 600 800 1000)
 TAU=0.7  # Default tau value, can be adjusted
-WARMUP_RUNS=2  # Number of warmup runs (discarded)
-ACTUAL_RUNS=5  # Number of actual runs to record
-PARALLEL_MODE="fullParallel"  # Fixed parallelization mode
+WARMUP_RUNS=3  # Number of warmup runs (discarded)
+ACTUAL_RUNS=30  # Number of actual runs to record (increased for statistical significance)
+PARALLEL_MODE="default"  # Fixed parallelization mode (sequential baseline for fair support calculator comparison)
 
 # Dataset configurations: name|file_path
 DATASETS=(
@@ -81,7 +81,7 @@ run_single_iteration() {
     local support_variant=$3
     local temp_output=$4
 
-    # Run the algorithm with --parallel fullParallel and --support variant
+    # Run the algorithm with specified parallelization mode and support variant
     java -cp "$CLASSPATH" presentation.Main "$dataset_file" "$TAU" "$k" \
         --parallel "$PARALLEL_MODE" --support "$support_variant" > "$temp_output" 2>&1
 
@@ -257,7 +257,7 @@ run_dataset_k_experiment() {
         echo "Dataset: ${dataset_name}"
         echo "Top-K: ${k}"
         echo "Tau threshold: ${TAU}"
-        echo "Parallelization mode: ${PARALLEL_MODE} (fixed for all tests)"
+        echo "Parallelization mode: ${PARALLEL_MODE} (fixed sequential baseline for fair support calculator comparison)"
         echo "Warmup runs: ${WARMUP_RUNS}"
         echo "Actual runs: ${ACTUAL_RUNS}"
         echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"

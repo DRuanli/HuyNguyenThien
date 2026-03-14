@@ -5,6 +5,8 @@ import infrastructure.persistence.UncertainDatabase;
 import infrastructure.persistence.Vocabulary;
 import domain.model.*;
 import infrastructure.topK.TopKHeap;
+import infrastructure.metrics.PerformanceMetrics;
+import infrastructure.metrics.MetricsCollector;
 import application.config.ParallelizationMode;
 
 import java.util.*;
@@ -144,6 +146,18 @@ public abstract class AbstractMiner {
     protected int[] frequentItems;
 
     /**
+     * Performance metrics collector for IEEE publication-quality measurements.
+     * Tracks timing, algorithm efficiency, and parallel performance metrics.
+     */
+    protected PerformanceMetrics metrics;
+
+    /**
+     * Automatic instrumentation helper for collecting metrics during mining.
+     * Provides convenient methods for phase timing, candidate counting, etc.
+     */
+    protected MetricsCollector metricsCollector;
+
+    /**
      * Optional closure metrics tracker for experiments.
      * When set, records statistics about closure checking efficiency.
      */
@@ -189,6 +203,16 @@ public abstract class AbstractMiner {
         this.vocab = database.getVocabulary();
         this.parallelizationMode = mode;
         this.cache = new HashMap<>();
+
+        // Initialize performance metrics with default values
+        // Dataset name and run ID can be updated later via setMetricsInfo()
+        this.metrics = new PerformanceMetrics("unknown", 0, tau, k);
+        this.metricsCollector = new MetricsCollector(metrics);
+
+        // Set dataset characteristics
+        this.metrics.setTransactionCount(database.size());
+        this.metrics.setVocabularySize(vocab.size());
+        this.metrics.setParallelizationMode(mode.getCliValue());
     }
 
     /**
@@ -308,6 +332,55 @@ public abstract class AbstractMiner {
     }
 
     /**
+     * Gets the performance metrics collected during mining.
+     *
+     * @return PerformanceMetrics object with all collected metrics
+     */
+    public PerformanceMetrics getMetrics() {
+        return metrics;
+    }
+
+    /**
+     * Gets the metrics collector for manual instrumentation.
+     *
+     * @return MetricsCollector instance
+     */
+    protected MetricsCollector getMetricsCollector() {
+        return metricsCollector;
+    }
+
+    /**
+     * Sets dataset information for metrics reporting.
+     * Should be called before mine() to properly identify the experimental run.
+     *
+     * @param datasetName name of the dataset being mined
+     * @param runId unique identifier for this experimental run
+     */
+    public void setMetricsInfo(String datasetName, int runId) {
+        metrics.setDatasetName(datasetName);
+        metrics.setRunId(runId);
+    }
+
+    /**
+     * Sets the support calculator type in metrics.
+     * Should be called after creating the calculator.
+     *
+     * @param calculatorType type of support calculator being used
+     */
+    public void setCalculatorType(String calculatorType) {
+        metrics.setSupportCalculatorType(calculatorType);
+    }
+
+    /**
+     * Sets the number of cores being used for parallel execution.
+     *
+     * @param cores number of cores/threads
+     */
+    public void setCoresUsed(int cores) {
+        metrics.setCoresUsed(cores);
+    }
+
+    /**
      * ==================== TEMPLATE METHOD: Defines the mining algorithm skeleton ====================
      *
      * This method is FINAL - subclasses cannot override it.
@@ -325,30 +398,35 @@ public abstract class AbstractMiner {
      */
     public final List<FrequentItemset> mine() {
         // ==================== PHASE 1: Compute ALL 1-itemsets (no filtering) ====================
-        long start1 = System.nanoTime();
-
-        // Subclass implements this: scans database for frequent single items
-        List<FrequentItemset> frequent1Itemsets = computeAllSingletonSupports();
-
-        long phase1Time = (System.nanoTime() - start1) / 1_000_000;  // Convert to ms
+        List<FrequentItemset> frequent1Itemsets;
+        try (MetricsCollector.PhaseTimer timer = metricsCollector.startPhase1()) {
+            // Subclass implements this: scans database for frequent single items
+            frequent1Itemsets = computeAllSingletonSupports();
+        }
 
         // ==================== PHASE 2: Initialize data structures and fill Top-K ====================
-        long start2 = System.nanoTime();
-
-        // Subclass implements this: builds PQ, caches, etc.
-        initializeTopKWithClosedSingletons(frequent1Itemsets);
-
-        long phase2Time = (System.nanoTime() - start2) / 1_000_000;
+        try (MetricsCollector.PhaseTimer timer = metricsCollector.startPhase2()) {
+            // Subclass implements this: builds PQ, caches, etc.
+            initializeTopKWithClosedSingletons(frequent1Itemsets);
+        }
 
         // ==================== PHASE 3: Recursive mining (main loop) ====================
-        long start3 = System.nanoTime();
+        try (MetricsCollector.PhaseTimer timer = metricsCollector.startPhase3()) {
+            // Subclass implements this: priority queue processing, closure checking
+            executePhase3(frequent1Itemsets);
+        }
 
-        // Subclass implements this: priority queue processing, closure checking
-        executePhase3(frequent1Itemsets);
+        // ==================== FINALIZE: Complete metrics and return results ====================
+        metricsCollector.complete();
 
-        long phase3Time = (System.nanoTime() - start3) / 1_000_000;
+        // Record final counts
+        if (topK != null) {
+            metrics.setClosedItemsetsFound(topK.getAll().size());
+            if (topK.isFull()) {
+                metrics.setMinSupportThreshold(topK.getMinSupport());
+            }
+        }
 
-        // ==================== RETURN: Get final top-K results ====================
         return getTopKResults();
     }
 

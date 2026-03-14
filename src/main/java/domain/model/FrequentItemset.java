@@ -164,7 +164,7 @@ public class FrequentItemset extends Itemset {
      *
      * @param a first itemset
      * @param b second itemset
-     * @return comparison result (descending by support, then probability)
+     * @return comparison result (descending by support, then probability, then lexicographic)
      */
     public static int compareBySupport(FrequentItemset a, FrequentItemset b) {
         // Primary: support descending (higher is better)
@@ -172,16 +172,35 @@ public class FrequentItemset extends Itemset {
         if (cmp != 0) return cmp;
 
         // Secondary: probability descending (higher is better)
-        return Double.compare(b.probability, a.probability);
+        cmp = Double.compare(b.probability, a.probability);
+        if (cmp != 0) return cmp;
+
+        // Tertiary: lexicographic order on items (deterministic tie-breaker)
+        // This ensures total ordering for reproducibility in parallel execution
+        int[] aItems = a.getItemsArray();
+        int[] bItems = b.getItemsArray();
+
+        // Compare lengths first
+        cmp = Integer.compare(aItems.length, bItems.length);
+        if (cmp != 0) return cmp;
+
+        // Then compare items lexicographically
+        for (int i = 0; i < aItems.length; i++) {
+            cmp = Integer.compare(aItems[i], bItems[i]);
+            if (cmp != 0) return cmp;
+        }
+
+        return 0;
     }
 
     /**
-     * Compare for priority queue (support DESC, size ASC, probability DESC).
+     * Compare for priority queue (support DESC, size ASC, probability DESC, lexicographic).
      *
      * This ordering ensures we explore the most promising candidates first:
      * - Higher support itemsets first (more frequent)
      * - Smaller itemsets first (when support is equal)
      * - Higher probability first (when support and size are equal)
+     * - Lexicographic order on items (deterministic tie-breaker for parallel reproducibility)
      *
      * @param a first itemset
      * @param b second itemset
@@ -197,6 +216,23 @@ public class FrequentItemset extends Itemset {
         if (cmp != 0) return cmp;
 
         // Tertiary: probability descending (higher probability first)
-        return Double.compare(b.probability, a.probability);
+        cmp = Double.compare(b.probability, a.probability);
+        if (cmp != 0) return cmp;
+
+        // Quaternary: lexicographic order on items (deterministic tie-breaker)
+        // This ensures total ordering for bit-exact reproducibility in parallel execution
+        // At this point, a and b have same support, size, and probability
+        int[] aItems = a.getItemsArray();
+        int[] bItems = b.getItemsArray();
+
+        // Sizes are equal (verified in Secondary comparison above),
+        // so arrays have same length - just compare lexicographically
+        for (int i = 0; i < aItems.length; i++) {
+            cmp = Integer.compare(aItems[i], bItems[i]);
+            if (cmp != 0) return cmp;
+        }
+
+        // Truly equal itemsets (should not happen in practice)
+        return 0;
     }
 }

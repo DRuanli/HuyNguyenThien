@@ -9,7 +9,7 @@
 # - Number of candidates examined
 # - Threshold evolution
 #
-# Fixed: K=100, parallelization mode=fullParallel
+# Fixed: K=100, parallelization mode=default (sequential baseline)
 # Varied: Tau values: 0.5, 0.6, 0.7, 0.8, 0.9
 #
 # Results saved to: result_sensitivity_tau/{Dataset}/k{topk}/result_{timestamp}.txt
@@ -27,9 +27,9 @@ NC='\033[0m' # No Color
 # Configuration
 TOPK_VALUES=(100)  # Fixed K value for tau sensitivity
 TAU_VALUES=(0.5 0.6 0.7 0.8 0.9)  # Varying tau
-WARMUP_RUNS=2
-ACTUAL_RUNS=5
-PARALLEL_MODE="fullParallel"
+WARMUP_RUNS=3
+ACTUAL_RUNS=30  # Increased for statistical significance
+PARALLEL_MODE="default"  # Sequential baseline for clean tau sensitivity analysis
 
 # Dataset configurations: name|file_path
 DATASETS=(

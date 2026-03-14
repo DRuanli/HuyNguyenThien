@@ -26,6 +26,17 @@ package application.config;
  *    - Parallel extension generation and closure checking
  *    - Location: AbstractMiner.checkClosureAndGenerateExtensionsParallel()
  *
+ * ==================== AVOIDING NESTED PARALLELISM ====================
+ *
+ * IMPORTANT: Modes that combine closure parallelization (3 or 4) with support calculator
+ * parallelization (2) have been REMOVED due to nested parallelism issues:
+ * - ONLY_PHASE2 (removed): closure parallel + support parallel → thread contention
+ * - ONLY_PHASE3 (removed): extensions parallel + support parallel → thread contention
+ * - FULL_PARALLEL (removed): everything parallel → severe thread contention
+ *
+ * Only non-nested modes remain:
+ * - ONLY_CLOSURE: closure parallel, support sequential
+ * - ONLY_SUPPORT: closure sequential, support parallel
  *
  * @author Dang Nguyen Le, Gia Huy Vo
  */
@@ -60,36 +71,6 @@ public enum ParallelizationMode {
     ONLY_PHASE1("onlyPhase1", "Parallel Phase 1 only"),
 
     /**
-     * ONLY_PHASE2: Parallelize Phase 2 (closure checking + support calculator).
-     *
-     * Phase 1: Sequential
-     * Support Calculator: Parallel
-     * Phase 2 Closure: Parallel
-     * Phase 3 Extensions: Sequential
-     *
-     * Use when:
-     * - Large vocabulary (many 2-itemset combinations)
-     * - Want to speed up Phase 2 initialization
-     * - Dense tidsets in Phase 2
-     */
-    ONLY_PHASE2("onlyPhase2", "Parallel Phase 2 (closure + support)"),
-
-    /**
-     * ONLY_PHASE3: Parallelize Phase 3 (extension generation + support calculator).
-     *
-     * Phase 1: Sequential
-     * Support Calculator: Parallel
-     * Phase 2 Closure: Sequential
-     * Phase 3 Extensions: Parallel
-     *
-     * Use when:
-     * - Deep itemsets (3+, 4+)
-     * - Many extensions per candidate
-     * - Dense tidsets in Phase 3
-     */
-    ONLY_PHASE3("onlyPhase3", "Parallel Phase 3 (extensions + support)"),
-
-    /**
      * ONLY_CLOSURE: Parallelize only closure checking (both Phase 2 and Phase 3).
      *
      * Phase 1: Sequential
@@ -101,6 +82,7 @@ public enum ParallelizationMode {
      * - Large vocabulary
      * - Deep searches
      * - Want to maximize closure checking performance only
+     * - AVOIDS nested parallelism (support calculator is sequential)
      */
     ONLY_CLOSURE("onlyClosure", "Parallel closure checking only (Phase 2 + Phase 3)"),
 
@@ -116,23 +98,9 @@ public enum ParallelizationMode {
      * - Dense tidsets (items appear in many transactions)
      * - Deep itemsets with large support calculations
      * - Want to optimize only support computation
+     * - AVOIDS nested parallelism (closure checking is sequential)
      */
-    ONLY_SUPPORT("onlySupport", "Parallel support calculator only"),
-
-    /**
-     * FULL_PARALLEL: Maximum parallelization - everything parallel.
-     *
-     * Phase 1: Parallel
-     * Support Calculator: Parallel
-     * Phase 2 Closure: Parallel
-     * Phase 3 Extensions: Parallel
-     *
-     * Use when:
-     * - Maximum performance needed
-     * - Multi-core CPU (8+ cores)
-     * - Large, complex datasets
-     */
-    FULL_PARALLEL("fullParallel", "Full parallelization (all components)");
+    ONLY_SUPPORT("onlySupport", "Parallel support calculator only");
 
     /** Command-line argument value */
     private final String cliValue;
@@ -201,7 +169,7 @@ public enum ParallelizationMode {
 
         // Invalid value - throw exception with helpful message
         throw new IllegalArgumentException(
-            String.format("Invalid parallelization mode: '%s'. Valid options: default, onlyPhase1, onlyPhase2, onlyPhase3, onlyClosure, onlySupport, fullParallel",
+            String.format("Invalid parallelization mode: '%s'. Valid options: default, onlyPhase1, onlyClosure, onlySupport",
                          cliValue)
         );
     }
@@ -212,7 +180,7 @@ public enum ParallelizationMode {
      * @return true if Phase 1 parallelization is enabled
      */
     public boolean isPhase1Parallel() {
-        return this == ONLY_PHASE1 || this == FULL_PARALLEL;
+        return this == ONLY_PHASE1;
     }
 
     /**
@@ -221,7 +189,7 @@ public enum ParallelizationMode {
      * @return true if support calculator parallelization is enabled
      */
     public boolean isSupportCalculatorParallel() {
-        return this == ONLY_PHASE2 || this == ONLY_PHASE3 || this == ONLY_SUPPORT || this == FULL_PARALLEL;
+        return this == ONLY_SUPPORT;
     }
 
     /**
@@ -230,7 +198,7 @@ public enum ParallelizationMode {
      * @return true if Phase 2 closure checking parallelization is enabled
      */
     public boolean isPhase2ClosureCheckParallel() {
-        return this == ONLY_PHASE2 || this == ONLY_CLOSURE || this == FULL_PARALLEL;
+        return this == ONLY_CLOSURE;
     }
 
     /**
@@ -239,7 +207,7 @@ public enum ParallelizationMode {
      * @return true if Phase 3 extension generation parallelization is enabled
      */
     public boolean isPhase3ExtensionGenerationParallel() {
-        return this == ONLY_PHASE3 || this == ONLY_CLOSURE || this == FULL_PARALLEL;
+        return this == ONLY_CLOSURE;
     }
 
     @Override

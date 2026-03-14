@@ -20,6 +20,7 @@ import java.util.concurrent.RecursiveTask;
  * 1. Left and right subtrees computed in PARALLEL (not sequential)
  * 2. Work-stealing algorithm distributes load across CPU cores
  * 3. Adaptive threshold prevents overhead on small tasks
+ * 4. Configurable parallelism for scalability experiments
  *
  * ═══════════════════════════════════════════════════════════════════════════════
  * PARALLELIZATION STRATEGY
@@ -53,9 +54,25 @@ import java.util.concurrent.RecursiveTask;
  *   Parallel version creates more temporary arrays simultaneously.
  *   Each forked task allocates O(n) space for its distribution.
  *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * CONFIGURABLE PARALLELISM (NEW)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * This class now supports configurable parallelism for precise control in experiments:
+ *
+ *   // Use common pool (default)
+ *   new ParallelRecursiveConvolutionSupportCalculator(tau);
+ *
+ *   // Use custom pool with 4 threads (for scalability experiments)
+ *   new ParallelRecursiveConvolutionSupportCalculator(tau, 4);
+ *
+ * Resource management:
+ *   Custom pools must be shutdown() when done to prevent resource leaks.
+ *   Common pool is managed by JVM and should NOT be shutdown.
+ *
  * @author Dang Nguyen Le, Gia Huy Vo
  */
-public class ParallelRecursiveConvolutionSupportCalculator extends AbstractSupportCalculator {
+public class ParallelRecursiveConvolutionSupportCalculator extends AbstractSupportCalculator implements AutoCloseable {
 
     /**
      * Minimum number of transactions to justify parallel processing.
@@ -72,19 +89,45 @@ public class ParallelRecursiveConvolutionSupportCalculator extends AbstractSuppo
     private static final int PARALLEL_THRESHOLD = 64;
 
     /**
-     * Shared Fork/Join pool for parallel computation.
-     * Reuses threads across multiple invocations for efficiency.
-     * Uses common pool with parallelism = number of CPU cores - 1.
+     * Fork/Join pool for parallel computation.
+     * Can be either common pool (shared) or custom pool (owned by this instance).
      */
-    private static final ForkJoinPool FORK_JOIN_POOL = ForkJoinPool.commonPool();
+    private final ForkJoinPool pool;
 
     /**
-     * Constructor.
+     * Flag indicating whether this instance owns the pool.
+     * If true, we must shutdown() the pool when done.
+     * If false, the pool is the common pool managed by JVM.
+     */
+    private final boolean ownsPool;
+
+    /**
+     * Constructor with configurable parallelism.
+     *
+     * @param tau probability threshold (0 < τ ≤ 1)
+     * @param parallelism number of worker threads (0 or negative = use common pool)
+     */
+    public ParallelRecursiveConvolutionSupportCalculator(double tau, int parallelism) {
+        super(tau);
+
+        if (parallelism <= 0) {
+            // Use JVM's common pool (shared, managed by JVM)
+            this.pool = ForkJoinPool.commonPool();
+            this.ownsPool = false;
+        } else {
+            // Create custom pool with specified parallelism
+            this.pool = new ForkJoinPool(parallelism);
+            this.ownsPool = true;
+        }
+    }
+
+    /**
+     * Constructor using common pool (backward compatible).
      *
      * @param tau probability threshold (0 < τ ≤ 1)
      */
     public ParallelRecursiveConvolutionSupportCalculator(double tau) {
-        super(tau);
+        this(tau, 0);  // 0 = use common pool
     }
 
     /**
@@ -219,10 +262,10 @@ public class ParallelRecursiveConvolutionSupportCalculator extends AbstractSuppo
         }
 
         // ═════════════════════════════════════════════════════════════════
-        // FORK/JOIN: Launch parallel computation
+        // FORK/JOIN: Launch parallel computation using instance pool
         // ═════════════════════════════════════════════════════════════════
         ConvolutionTask task = new ConvolutionTask(probs, start, end);
-        return FORK_JOIN_POOL.invoke(task);
+        return pool.invoke(task);  // Use instance pool (not static)
     }
 
     /**
@@ -424,12 +467,50 @@ public class ParallelRecursiveConvolutionSupportCalculator extends AbstractSuppo
      * DIAGNOSTICS: Get Fork/Join pool parallelism level
      * ═══════════════════════════════════════════════════════════════════════════
      *
-     * Returns number of threads in the pool.
-     * Typically: Runtime.getRuntime().availableProcessors() - 1
+     * Returns number of threads in this calculator's pool.
      *
      * @return parallelism level (number of worker threads)
      */
-    public static int getPoolParallelism() {
-        return FORK_JOIN_POOL.getParallelism();
+    public int getPoolParallelism() {
+        return pool.getParallelism();
+    }
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════
+     * RESOURCE MANAGEMENT: Shutdown custom pool
+     * ═══════════════════════════════════════════════════════════════════════════
+     *
+     * Shuts down the ForkJoinPool if this instance owns it (custom pool).
+     * Does nothing if using common pool (managed by JVM).
+     *
+     * Should be called when calculator is no longer needed to prevent resource leaks.
+     * After shutdown, this calculator cannot be used for further computations.
+     *
+     * Example usage:
+     * <pre>
+     * try (ParallelRecursiveConvolutionSupportCalculator calc =
+     *          new ParallelRecursiveConvolutionSupportCalculator(0.7, 4)) {
+     *     // Use calculator
+     *     calc.computeProbabilisticSupport(...);
+     * }  // Automatically calls close() → shutdown()
+     * </pre>
+     */
+    public void shutdown() {
+        if (ownsPool && !pool.isShutdown()) {
+            pool.shutdown();
+        }
+    }
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════════
+     * AUTOCLOSEABLE INTERFACE: Automatic resource management
+     * ═══════════════════════════════════════════════════════════════════════════
+     *
+     * Implements AutoCloseable to support try-with-resources.
+     * Delegates to shutdown().
+     */
+    @Override
+    public void close() {
+        shutdown();
     }
 }

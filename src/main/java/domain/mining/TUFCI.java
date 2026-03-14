@@ -76,7 +76,7 @@ public class TUFCI extends AbstractMiner {
      * @param database The uncertain database to mine
      * @param tau The probability threshold
      * @param k The number of top patterns to find
-     * @param mode Parallelization mode (DEFAULT, ONLY_PHASE1, ONLY_PHASE2, ONLY_PHASE3, ONLY_CLOSURE, ONLY_SUPPORT, or FULL_PARALLEL)
+     * @param mode Parallelization mode (DEFAULT, ONLY_PHASE1, ONLY_CLOSURE, or ONLY_SUPPORT)
      */
     public TUFCI(UncertainDatabase database, double tau, int k, ParallelizationMode mode) {
         super(database, tau, k, createCalculator(tau, mode, SupportCalculatorType.AUTO), mode);
@@ -120,7 +120,7 @@ public class TUFCI extends AbstractMiner {
         // If AUTO mode, choose based on parallelization mode
         if (supportType == SupportCalculatorType.AUTO) {
             if (mode.isSupportCalculatorParallel()) {
-                // Use parallel calculator for ONLY_PHASE2, ONLY_PHASE3, ONLY_SUPPORT, and FULL_PARALLEL modes
+                // Use parallel calculator for ONLY_SUPPORT mode only
                 return new ParallelRecursiveConvolutionSupportCalculator(tau);
             } else {
                 // Use sequential calculator for DEFAULT, ONLY_PHASE1, and ONLY_CLOSURE modes

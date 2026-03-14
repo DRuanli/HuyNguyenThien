@@ -20,6 +20,7 @@ import java.util.concurrent.RecursiveTask;
  * 1. FFT-based polynomial multiplication (O(n log n) per multiplication)
  * 2. Parallel divide-and-conquer recursion using Fork/Join
  * 3. Optimal for very large tidsets (> 5,000 transactions)
+ * 4. Configurable parallelism for scalability experiments
  *
  * ==================== COMPARISON WITH OTHER CALCULATORS ====================
  *
@@ -60,9 +61,19 @@ import java.util.concurrent.RecursiveTask;
  *   Parallel version creates more temporary arrays simultaneously.
  *   Peak memory: O(p × n) where p = active parallel tasks
  *
+ * ==================== CONFIGURABLE PARALLELISM (NEW) ====================
+ *
+ * This class now supports configurable parallelism for precise control in experiments:
+ *
+ *   // Use common pool (default)
+ *   new ParallelFFTConvolutionSupportCalculator(tau);
+ *
+ *   // Use custom pool with 4 threads (for scalability experiments)
+ *   new ParallelFFTConvolutionSupportCalculator(tau, 4);
+ *
  * @author Dang Nguyen Le, Gia Huy Vo
  */
-public class ParallelFFTConvolutionSupportCalculator extends AbstractSupportCalculator {
+public class ParallelFFTConvolutionSupportCalculator extends AbstractSupportCalculator implements AutoCloseable {
 
     /**
      * Minimum number of polynomials to justify parallel processing.
@@ -81,19 +92,45 @@ public class ParallelFFTConvolutionSupportCalculator extends AbstractSupportCalc
     private static final int PARALLEL_THRESHOLD = 32;
 
     /**
-     * Shared Fork/Join pool for parallel computation.
-     * Reuses threads across multiple invocations for efficiency.
-     * Uses common pool with parallelism = number of CPU cores - 1.
+     * Fork/Join pool for parallel computation.
+     * Can be either common pool (shared) or custom pool (owned by this instance).
      */
-    private static final ForkJoinPool FORK_JOIN_POOL = ForkJoinPool.commonPool();
+    private final ForkJoinPool pool;
 
     /**
-     * Constructor.
+     * Flag indicating whether this instance owns the pool.
+     * If true, we must shutdown() the pool when done.
+     * If false, the pool is the common pool managed by JVM.
+     */
+    private final boolean ownsPool;
+
+    /**
+     * Constructor with configurable parallelism.
+     *
+     * @param tau probability threshold (0 < τ ≤ 1)
+     * @param parallelism number of worker threads (0 or negative = use common pool)
+     */
+    public ParallelFFTConvolutionSupportCalculator(double tau, int parallelism) {
+        super(tau);
+
+        if (parallelism <= 0) {
+            // Use JVM's common pool (shared, managed by JVM)
+            this.pool = ForkJoinPool.commonPool();
+            this.ownsPool = false;
+        } else {
+            // Create custom pool with specified parallelism
+            this.pool = new ForkJoinPool(parallelism);
+            this.ownsPool = true;
+        }
+    }
+
+    /**
+     * Constructor using common pool (backward compatible).
      *
      * @param tau probability threshold (0 < τ ≤ 1)
      */
     public ParallelFFTConvolutionSupportCalculator(double tau) {
-        super(tau);
+        this(tau, 0);  // 0 = use common pool
     }
 
     /**
@@ -274,9 +311,9 @@ public class ParallelFFTConvolutionSupportCalculator extends AbstractSupportCalc
             return multiplyRangeSequential(polynomials, 0, polynomials.length);
         }
 
-        // Launch parallel computation
+        // Launch parallel computation using instance pool
         FFTMultiplicationTask task = new FFTMultiplicationTask(polynomials, 0, polynomials.length);
-        return FORK_JOIN_POOL.invoke(task);
+        return pool.invoke(task);  // Use instance pool (not static)
     }
 
     /**
@@ -402,9 +439,36 @@ public class ParallelFFTConvolutionSupportCalculator extends AbstractSupportCalc
     /**
      * ==================== DIAGNOSTICS: Get Fork/Join pool parallelism level ====================
      *
+     * Returns number of threads in this calculator's pool.
+     *
      * @return parallelism level (number of worker threads)
      */
-    public static int getPoolParallelism() {
-        return FORK_JOIN_POOL.getParallelism();
+    public int getPoolParallelism() {
+        return pool.getParallelism();
+    }
+
+    /**
+     * ==================== RESOURCE MANAGEMENT: Shutdown custom pool ====================
+     *
+     * Shuts down the ForkJoinPool if this instance owns it (custom pool).
+     * Does nothing if using common pool (managed by JVM).
+     *
+     * Should be called when calculator is no longer needed to prevent resource leaks.
+     */
+    public void shutdown() {
+        if (ownsPool && !pool.isShutdown()) {
+            pool.shutdown();
+        }
+    }
+
+    /**
+     * ==================== AUTOCLOSEABLE INTERFACE: Automatic resource management ====================
+     *
+     * Implements AutoCloseable to support try-with-resources.
+     * Delegates to shutdown().
+     */
+    @Override
+    public void close() {
+        shutdown();
     }
 }

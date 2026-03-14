@@ -6,7 +6,7 @@
 # This script performs strong scaling experiments:
 # - Fixed dataset size and parameters
 # - Varying number of cores: 1, 2, 4, 8, 16 (up to available)
-# - Fixed parallelization mode: fullParallel
+# - Fixed parallelization mode: onlySupport (avoids nested parallelism)
 # - Fixed support calculator: parallel (ParallelRecursiveConvolution)
 #   Using Parallel Divide & Conquer with O(n² log n / p) complexity
 #
@@ -31,9 +31,9 @@ NC='\033[0m' # No Color
 # Configuration
 TOPK_VALUES=(200 400 600)  # Moderate k values for scalability test
 TAU=0.7
-WARMUP_RUNS=2
-ACTUAL_RUNS=5
-PARALLEL_MODE="fullParallel"
+WARMUP_RUNS=3
+ACTUAL_RUNS=30  # Increased for statistical significance
+PARALLEL_MODE="onlySupport"  # Parallelize only support calculator (avoids nested parallelism)
 SUPPORT_CALCULATOR="parallel"  # ParallelRecursiveConvolution (Parallel Divide & Conquer)
 
 # Dataset configurations: name|file_path

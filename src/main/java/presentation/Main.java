@@ -2,6 +2,7 @@ package presentation;
 
 import domain.observer.PhaseTimingObserver;
 import infrastructure.factory.MinerFactory;
+import infrastructure.metrics.PerformanceMetrics;
 import domain.model.FrequentItemset;
 import infrastructure.persistence.UncertainDatabase;
 import domain.mining.TUFCI;
@@ -9,6 +10,9 @@ import application.config.ParallelizationMode;
 import application.config.SupportCalculatorType;
 
 import java.io.IOException;
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.io.File;
 import java.util.List;
 
 public class Main {
@@ -60,6 +64,14 @@ public class Main {
         System.out.println("Creating TUFCI miner...");
         TUFCI miner = MinerFactory.createMiner(database, tau, k, parallelMode, supportType);
 
+        // Extract dataset name from file path for metrics
+        String datasetName = new File(dbFile).getName().replaceAll("\\.txt$", "");
+        int runId = (int) (System.currentTimeMillis() % 100000); // Simple run ID based on timestamp
+
+        // Set metrics information
+        miner.setMetricsInfo(datasetName, runId);
+        miner.setCalculatorType(getSupportCalculatorDescription(supportType));
+
         PhaseTimingObserver observer = new PhaseTimingObserver();
         // Note: Observer pattern not yet implemented in TUFCI
         // Phase timing will be added in future version
@@ -84,6 +96,9 @@ public class Main {
 
         // Execute the mining algorithm
         List<FrequentItemset> results = miner.mine();
+
+        // Get performance metrics from miner
+        PerformanceMetrics metrics = miner.getMetrics();
 
         long endTime = System.nanoTime();
         long executionTime = (endTime - startTime) / 1_000_000; // Convert to ms
@@ -118,23 +133,9 @@ public class Main {
 
         // ==================== Step 6: Export Results to Files ====================
 
-        // Export performance metrics to CSV
+        // Export performance metrics to CSV using new IEEE-compliant metrics
         if (csvOutput != null) {
-            ResultExporter.initializePerformanceCSV(csvOutput);
-            ResultExporter.exportPerformanceCSV(
-                csvOutput,
-                dbFile,
-                database.size(),
-                database.getVocabulary().size(),
-                tau,
-                k,
-                parallelMode.name(),
-                supportType.name(),
-                observer,
-                executionTime,
-                memoryUsed,
-                results.size()
-            );
+            exportMetricsToCSV(metrics, csvOutput);
             System.out.println("Performance metrics exported to: " + csvOutput);
         }
 
@@ -183,14 +184,14 @@ public class Main {
      *
      * Supported formats:
      * - (no flag)                 → ParallelizationMode.DEFAULT (fully sequential)
-     * - --parallel                → ParallelizationMode.FULL_PARALLEL (everything parallel)
+     * - --parallel                → ParallelizationMode.ONLY_CLOSURE (safe default)
      * - --parallel default        → ParallelizationMode.DEFAULT
-     * - --parallel onlyPhase1     → ParallelizationMode.ONLY_PHASE1
-     * - --parallel onlyPhase2     → ParallelizationMode.ONLY_PHASE2 (closure + support in Phase 2)
-     * - --parallel onlyPhase3     → ParallelizationMode.ONLY_PHASE3 (extensions + support in Phase 3)
-     * - --parallel onlyClosure    → ParallelizationMode.ONLY_CLOSURE (closure in Phase 2 & 3)
-     * - --parallel onlySupport    → ParallelizationMode.ONLY_SUPPORT (support calculator only)
-     * - --parallel fullParallel   → ParallelizationMode.FULL_PARALLEL
+     * - --parallel onlyPhase1     → ParallelizationMode.ONLY_PHASE1 (parallel singleton computations)
+     * - --parallel onlyClosure    → ParallelizationMode.ONLY_CLOSURE (parallel closure checking)
+     * - --parallel onlySupport    → ParallelizationMode.ONLY_SUPPORT (parallel support calculator)
+     *
+     * Design Note: Each mode parallelizes ONE component to avoid nested parallelism issues.
+     * Old modes (onlyPhase2, onlyPhase3, fullParallel) were removed to prevent thread contention.
      *
      * @param args command-line arguments
      * @return parsed ParallelizationMode
@@ -207,12 +208,12 @@ public class Main {
                         return ParallelizationMode.fromCliValue(value);
                     } catch (IllegalArgumentException e) {
                         System.err.println("Error: " + e.getMessage());
-                        System.err.println("Defaulting to full parallelization mode.");
-                        return ParallelizationMode.FULL_PARALLEL;
+                        System.err.println("Defaulting to onlyClosure parallelization mode.");
+                        return ParallelizationMode.ONLY_CLOSURE;
                     }
                 } else {
-                    // --parallel (no value) → default to FULL_PARALLEL
-                    return ParallelizationMode.FULL_PARALLEL;
+                    // --parallel (no value) → default to ONLY_CLOSURE (safe parallel mode)
+                    return ParallelizationMode.ONLY_CLOSURE;
                 }
             }
         }
@@ -326,6 +327,43 @@ public class Main {
             }
         }
         return false;
+    }
+
+    /**
+     * Exports performance metrics to CSV file in IEEE publication format.
+     *
+     * Creates the file with header if it doesn't exist.
+     * Appends metrics row if file already exists.
+     *
+     * @param metrics the PerformanceMetrics object to export
+     * @param csvFilePath path to the CSV file
+     */
+    private static void exportMetricsToCSV(PerformanceMetrics metrics, String csvFilePath) {
+        try {
+            File csvFile = new File(csvFilePath);
+            boolean fileExists = csvFile.exists();
+
+            // Create parent directories if they don't exist
+            File parentDir = csvFile.getParentFile();
+            if (parentDir != null && !parentDir.exists()) {
+                parentDir.mkdirs();
+            }
+
+            // Open file in append mode
+            try (PrintWriter writer = new PrintWriter(new FileWriter(csvFile, true))) {
+                // Write header if this is a new file
+                if (!fileExists) {
+                    writer.println(PerformanceMetrics.getCSVHeader());
+                }
+
+                // Write metrics data
+                writer.println(metrics.toCSV());
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error exporting metrics to CSV: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
 }

@@ -21,25 +21,25 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Configuration
-TOPK_VALUES=(100)
+TOPK_VALUES=(100 200 300)
 TAU=0.7
 WARMUP_RUNS=2
-ACTUAL_RUNS=3
+ACTUAL_RUNS=2  # Increased for statistical significance (IEEE requirement)
 
 # Datasets
 DATASETS=(
     "Chess|data/chess_uncertain.txt"
-    "Kosarak|data/kosarak_uncertain.txt"
-    "Accidents|data/accidents_uncertain.txt"
+    "Retail|data/retail_uncertain.txt"
+    "Mushrooms|data/mushrooms_uncertain.txt"
+    #"Kosarak|data/kosarak_uncertain.txt"
 )
 
 # Parallelization modes
 PARALLEL_MODES=(
     "default"
     "onlyPhase1"
-    "onlyPhase2"
-    "onlyPhase3"
-    "fullParallel"
+    "onlyClosure"
+    "onlySupport"
 )
 
 # Output configuration
