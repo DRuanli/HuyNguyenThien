@@ -15,263 +15,350 @@ import java.io.PrintWriter;
 import java.io.File;
 import java.util.List;
 
+/**
+ * Main entry point for TUFCI mining algorithm.
+ *
+ * This class orchestrates the mining process by:
+ * 1. Parsing command-line arguments
+ * 2. Loading the database
+ * 3. Configuring and executing the mining algorithm
+ * 4. Displaying and exporting results
+ */
 public class Main {
-    public static void main(String[] args) throws IOException {
-        if (args.length < 1) {
-            Usage.printUsage();
-            return;
+
+    private static final String SEPARATOR = "─".repeat(65);
+    private static final int RUN_ID_MODULO = 100000;
+
+    public static void main(String[] args) {
+        try {
+            if (shouldShowUsage(args)) {
+                Usage.printUsage();
+                return;
+            }
+
+            MiningConfiguration config = parseConfiguration(args);
+            executeMiningPipeline(config);
+
+        } catch (IllegalArgumentException e) {
+            System.err.println("Error: " + e.getMessage());
+            System.err.println("Use --help for usage information");
+            System.exit(1);
+        } catch (IOException e) {
+            System.err.println("I/O Error: " + e.getMessage());
+            e.printStackTrace();
+            System.exit(1);
         }
+    }
 
-        // Parse positional arguments
-        String dbFile = args[0];
-        double tau = args.length > 1 ? Double.parseDouble(args[1]) : 0.7;
-        int k = args.length > 2 ? Integer.parseInt(args[2]) : 5;
+    /**
+     * Executes the complete mining pipeline.
+     */
+    private static void executeMiningPipeline(MiningConfiguration config) throws IOException {
+        UncertainDatabase database = loadDatabase(config);
+        TUFCI miner = configureMiner(config, database);
 
-        // Parse --parallel flag
-        ParallelizationMode parallelMode = parseParallelizationMode(args);
+        MiningResult result = executeMining(miner, config);
 
-        // Parse --support flag
-        SupportCalculatorType supportType = parseSupportCalculatorType(args);
+        displayResults(config, database, result);
+        exportResults(config, database, result);
+    }
 
-        // Parse output format flags
-        String csvOutput = parseStringFlag(args, "--output-csv");
-        String latexOutput = parseStringFlag(args, "--output-latex");
-        String patternsOutput = parseStringFlag(args, "--output-patterns");
-        boolean quietMode = hasFlag(args, "--quiet");
-
-        // Print configuration
-        System.out.println("╔═══════════════════════════════════════════════════════════╗");
-        System.out.println("║          TUFCI: Top-K Uncertain Frequent Closed           ║");
-        System.out.println("║              Itemset Mining Algorithm                     ║");
-        System.out.println("╚═══════════════════════════════════════════════════════════╝");
-        System.out.println();
-        System.out.println("Configuration:");
-        System.out.println("  Database file     : " + dbFile);
-        System.out.println("  Tau (threshold)   : " + tau);
-        System.out.println("  K (top patterns)  : " + k);
-        System.out.println("  Parallelization   : " + parallelMode.getDescription());
-        System.out.println("  Support Calculator: " + getSupportCalculatorDescription(supportType));
-        System.out.println();
+    /**
+     * Loads and validates the database from file.
+     */
+    private static UncertainDatabase loadDatabase(MiningConfiguration config) throws IOException {
+        printBanner();
+        printConfiguration(config);
 
         System.out.println("Loading database...");
-        UncertainDatabase database = UncertainDatabase.loadFromFile(dbFile);
+        UncertainDatabase database = UncertainDatabase.loadFromFile(config.databaseFile);
 
-        System.out.println("  Transactions : " + database.size());
-        System.out.println("  Vocabulary   : " + database.getVocabulary().size() + " unique items");
+        System.out.printf("  Transactions : %d%n", database.size());
+        System.out.printf("  Vocabulary   : %d unique items%n", database.getVocabulary().size());
         System.out.println();
 
+        return database;
+    }
 
+    /**
+     * Configures the TUFCI miner with appropriate settings.
+     */
+    private static TUFCI configureMiner(MiningConfiguration config, UncertainDatabase database) {
         System.out.println("Creating TUFCI miner...");
-        TUFCI miner = MinerFactory.createMiner(database, tau, k, parallelMode, supportType);
 
-        // Extract dataset name from file path for metrics
-        String datasetName = new File(dbFile).getName().replaceAll("\\.txt$", "");
-        int runId = (int) (System.currentTimeMillis() % 100000); // Simple run ID based on timestamp
+        TUFCI miner = MinerFactory.createMiner(
+            database,
+            config.tau,
+            config.k,
+            config.parallelMode,
+            config.supportType
+        );
 
-        // Set metrics information
+        String datasetName = extractDatasetName(config.databaseFile);
+        int runId = generateRunId();
+
+        String actualCalculatorName = getActualCalculatorName(miner);
         miner.setMetricsInfo(datasetName, runId);
-        miner.setCalculatorType(getSupportCalculatorDescription(supportType));
+        miner.setCalculatorType(actualCalculatorName);
 
-        PhaseTimingObserver observer = new PhaseTimingObserver();
-        // Note: Observer pattern not yet implemented in TUFCI
-        // Phase timing will be added in future version
+        printMinerConfiguration(config, actualCalculatorName);
 
-        System.out.println("  Algorithm           : TUFCI");
-        System.out.println("  Phase 1 Mode        : " + (parallelMode.isPhase1Parallel() ? "Parallel" : "Sequential"));
-        System.out.println("  Support Calc Mode   : " + (parallelMode.isSupportCalculatorParallel() ? "Parallel" : "Sequential"));
-        System.out.println("  Phase 2 Closure     : " + (parallelMode.isPhase2ClosureCheckParallel() ? "Parallel" : "Sequential"));
-        System.out.println("  Phase 3 Extensions  : " + (parallelMode.isPhase3ExtensionGenerationParallel() ? "Parallel" : "Sequential"));
-        System.out.println();
+        return miner;
+    }
 
+    /**
+     * Executes the mining algorithm and collects metrics.
+     */
+    private static MiningResult executeMining(TUFCI miner, MiningConfiguration config) {
         System.out.println("Starting mining process...");
-        System.out.println("─".repeat(65));
+        System.out.println(SEPARATOR);
 
-        // Get memory usage before mining
         Runtime runtime = Runtime.getRuntime();
-        runtime.gc(); // Suggest garbage collection for more accurate measurement
-        long memoryBefore = runtime.totalMemory() - runtime.freeMemory();
+        runtime.gc(); // Suggest GC for accurate memory measurement
 
-        // Record start time to measure performance
+        long memoryBefore = getUsedMemory(runtime);
         long startTime = System.nanoTime();
 
-        // Execute the mining algorithm
-        List<FrequentItemset> results = miner.mine();
-
-        // Get performance metrics from miner
+        List<FrequentItemset> patterns = miner.mine();
         PerformanceMetrics metrics = miner.getMetrics();
 
         long endTime = System.nanoTime();
-        long executionTime = (endTime - startTime) / 1_000_000; // Convert to ms
-        long memoryAfter = runtime.totalMemory() - runtime.freeMemory();
-        long memoryUsed = memoryAfter - memoryBefore;
+        long executionTimeMs = (endTime - startTime) / 1_000_000;
+        long memoryUsed = getUsedMemory(runtime) - memoryBefore;
 
-        System.out.println("─".repeat(65));
+        System.out.println(SEPARATOR);
         System.out.println("Mining completed!");
         System.out.println();
 
-        // ==================== Step 5: Display Performance Metrics ====================
-
-        if (!quietMode) {
-            // Print publication-ready summary to console
-            ResultExporter.printPublicationSummary(
-                dbFile,
-                database.size(),
-                database.getVocabulary().size(),
-                tau,
-                k,
-                parallelMode.name(),
-                getSupportCalculatorDescription(supportType),
-                observer,
-                executionTime,
-                memoryUsed,
-                results.size()
-            );
-
-            // Also print top patterns in human-readable format
-            Usage.printResults(results, k);
-        }
-
-        // ==================== Step 6: Export Results to Files ====================
-
-        // Export performance metrics to CSV using new IEEE-compliant metrics
-        if (csvOutput != null) {
-            exportMetricsToCSV(metrics, csvOutput);
-            System.out.println("Performance metrics exported to: " + csvOutput);
-        }
-
-        // Export LaTeX table
-        if (latexOutput != null) {
-            ResultExporter.exportLaTeXTable(
-                latexOutput,
-                dbFile,
-                database.size(),
-                database.getVocabulary().size(),
-                tau,
-                k,
-                parallelMode.name(),
-                observer,
-                executionTime,
-                memoryUsed,
-                results.size()
-            );
-            System.out.println("LaTeX table exported to: " + latexOutput);
-        }
-
-        // Export patterns to CSV
-        if (patternsOutput != null) {
-            ResultExporter.exportPatternsCSV(patternsOutput, results, k);
-            System.out.println("Patterns exported to: " + patternsOutput);
-        }
-
-        // If in quiet mode, just print the essential result
-        if (quietMode) {
-            System.out.printf("%s,%d,%d,%d,%d,%d,%.2f,%d%n",
-                dbFile,
-                database.size(),
-                database.getVocabulary().size(),
-                k,
-                observer.getPhase1Time(),
-                observer.getPhase2Time(),
-                observer.getPhase3Time(),
-                executionTime
-            );
-        }
-
+        return new MiningResult(patterns, metrics, executionTimeMs, memoryUsed);
     }
 
     /**
-     * Parse --parallel flag from command-line arguments.
-     *
-     * Supported formats:
-     * - (no flag)                 → ParallelizationMode.DEFAULT (fully sequential)
-     * - --parallel                → ParallelizationMode.ONLY_CLOSURE (safe default)
-     * - --parallel default        → ParallelizationMode.DEFAULT
-     * - --parallel onlyPhase1     → ParallelizationMode.ONLY_PHASE1 (parallel singleton computations)
-     * - --parallel onlyClosure    → ParallelizationMode.ONLY_CLOSURE (parallel closure checking)
-     * - --parallel onlySupport    → ParallelizationMode.ONLY_SUPPORT (parallel support calculator)
-     *
-     * Design Note: Each mode parallelizes ONE component to avoid nested parallelism issues.
-     * Old modes (onlyPhase2, onlyPhase3, fullParallel) were removed to prevent thread contention.
-     *
-     * @param args command-line arguments
-     * @return parsed ParallelizationMode
+     * Displays mining results to console.
      */
-    private static ParallelizationMode parseParallelizationMode(String[] args) {
-        // Search for --parallel flag
-        for (int i = 0; i < args.length; i++) {
-            if (args[i].equals("--parallel")) {
-                // Check if there's a value after the flag
-                if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
-                    // --parallel <value>
-                    String value = args[i + 1];
-                    try {
-                        return ParallelizationMode.fromCliValue(value);
-                    } catch (IllegalArgumentException e) {
-                        System.err.println("Error: " + e.getMessage());
-                        System.err.println("Defaulting to onlyClosure parallelization mode.");
-                        return ParallelizationMode.ONLY_CLOSURE;
-                    }
-                } else {
-                    // --parallel (no value) → default to ONLY_CLOSURE (safe parallel mode)
-                    return ParallelizationMode.ONLY_CLOSURE;
-                }
-            }
+    private static void displayResults(MiningConfiguration config, UncertainDatabase database, MiningResult result) {
+        if (config.quietMode) {
+            printQuietModeOutput(config, database, result);
+        } else {
+            printVerboseOutput(config, database, result);
+        }
+    }
+
+    /**
+     * Exports results to specified output files.
+     */
+    private static void exportResults(MiningConfiguration config, UncertainDatabase database, MiningResult result) throws IOException {
+        if (config.csvOutput != null) {
+            exportMetricsToCSV(result.metrics, config.csvOutput);
+            System.out.println("Performance metrics exported to: " + config.csvOutput);
         }
 
-        // No --parallel flag found → default to DEFAULT (fully sequential)
+        if (config.latexOutput != null) {
+            exportLaTeXTable(config, database, result);
+            System.out.println("LaTeX table exported to: " + config.latexOutput);
+        }
+
+        if (config.patternsOutput != null) {
+            ResultExporter.exportPatternsCSV(config.patternsOutput, result.patterns, config.k);
+            System.out.println("Patterns exported to: " + config.patternsOutput);
+        }
+    }
+
+    // ==================== Configuration Parsing ====================
+
+    private static boolean shouldShowUsage(String[] args) {
+        return args.length < 1 || hasFlag(args, "--help") || hasFlag(args, "-h");
+    }
+
+    private static MiningConfiguration parseConfiguration(String[] args) {
+        return new MiningConfiguration(
+            args[0],
+            parseDouble(args, 1, 0.7),
+            parseInt(args, 2, 5),
+            parseParallelizationMode(args),
+            parseSupportCalculatorType(args),
+            parseStringFlag(args, "--output-csv"),
+            parseStringFlag(args, "--output-latex"),
+            parseStringFlag(args, "--output-patterns"),
+            hasFlag(args, "--quiet")
+        );
+    }
+
+    private static double parseDouble(String[] args, int index, double defaultValue) {
+        return args.length > index ? Double.parseDouble(args[index]) : defaultValue;
+    }
+
+    private static int parseInt(String[] args, int index, int defaultValue) {
+        return args.length > index ? Integer.parseInt(args[index]) : defaultValue;
+    }
+
+    private static ParallelizationMode parseParallelizationMode(String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            if (args[i].equals("--parallel")) {
+                String value = getNextArgument(args, i);
+                return parseParallelMode(value);
+            }
+        }
         return ParallelizationMode.DEFAULT;
     }
 
-    /**
-     * Parse --support flag from command-line arguments.
-     *
-     * Supported formats:
-     * - (no flag)              → SupportCalculatorType.AUTO (choose based on parallelization mode)
-     * - --support direct       → SupportCalculatorType.DIRECT (DirectConvolutionSupport)
-     * - --support DCS          → SupportCalculatorType.DIRECT
-     * - --support recursive    → SupportCalculatorType.RECURSIVE (RecursiveConvolutionSupport)
-     * - --support RCS          → SupportCalculatorType.RECURSIVE
-     * - --support parallel     → SupportCalculatorType.PARALLEL (ParallelRecursiveConvolution)
-     * - --support PRC          → SupportCalculatorType.PARALLEL
-     * - --support fft          → SupportCalculatorType.FFT (FFTConvolutionSupport)
-     * - --support FFT          → SupportCalculatorType.FFT
-     * - --support parallelfft  → SupportCalculatorType.PARALLEL_FFT (ParallelFFTConvolution)
-     * - --support PFFT         → SupportCalculatorType.PARALLEL_FFT
-     * - --support auto         → SupportCalculatorType.AUTO
-     *
-     * @param args command-line arguments
-     * @return parsed SupportCalculatorType
-     */
-    private static SupportCalculatorType parseSupportCalculatorType(String[] args) {
-        // Search for --support flag
-        for (int i = 0; i < args.length; i++) {
-            if (args[i].equals("--support")) {
-                // Check if there's a value after the flag
-                if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
-                    // --support <value>
-                    String value = args[i + 1];
-                    try {
-                        return SupportCalculatorType.fromString(value);
-                    } catch (IllegalArgumentException e) {
-                        System.err.println("Error: " + e.getMessage());
-                        System.err.println("Defaulting to AUTO mode.");
-                        return SupportCalculatorType.AUTO;
-                    }
-                } else {
-                    // --support (no value) → default to AUTO
-                    return SupportCalculatorType.AUTO;
-                }
-            }
+    private static ParallelizationMode parseParallelMode(String value) {
+        if (value == null) {
+            return ParallelizationMode.ONLY_CLOSURE;
         }
 
-        // No --support flag found → default to AUTO
+        try {
+            return ParallelizationMode.fromCliValue(value);
+        } catch (IllegalArgumentException e) {
+            System.err.println("Warning: " + e.getMessage());
+            System.err.println("Defaulting to onlyClosure parallelization mode.");
+            return ParallelizationMode.ONLY_CLOSURE;
+        }
+    }
+
+    private static SupportCalculatorType parseSupportCalculatorType(String[] args) {
+        for (int i = 0; i < args.length; i++) {
+            if (args[i].equals("--support")) {
+                String value = getNextArgument(args, i);
+                return parseSupportType(value);
+            }
+        }
         return SupportCalculatorType.AUTO;
     }
 
-    /**
-     * Get human-readable description for support calculator type
-     */
-    private static String getSupportCalculatorDescription(SupportCalculatorType type) {
+    private static SupportCalculatorType parseSupportType(String value) {
+        if (value == null) {
+            return SupportCalculatorType.AUTO;
+        }
+
+        try {
+            return SupportCalculatorType.fromString(value);
+        } catch (IllegalArgumentException e) {
+            System.err.println("Warning: " + e.getMessage());
+            System.err.println("Defaulting to AUTO mode.");
+            return SupportCalculatorType.AUTO;
+        }
+    }
+
+    private static String parseStringFlag(String[] args, String flagName) {
+        for (int i = 0; i < args.length; i++) {
+            if (args[i].equals(flagName)) {
+                String value = getNextArgument(args, i);
+                if (value == null) {
+                    System.err.println("Warning: " + flagName + " requires a value");
+                }
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasFlag(String[] args, String flagName) {
+        for (String arg : args) {
+            if (arg.equals(flagName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String getNextArgument(String[] args, int currentIndex) {
+        int nextIndex = currentIndex + 1;
+        if (nextIndex < args.length && !args[nextIndex].startsWith("--")) {
+            return args[nextIndex];
+        }
+        return null;
+    }
+
+    // ==================== Output Formatting ====================
+
+    private static void printBanner() {
+        System.out.println("╔═══════════════════════════════════════════════════════════╗");
+        System.out.println("║          TUFCI: Top-K Uncertain Frequent Closed           ║");
+        System.out.println("║          " +
+                "    Itemset Mining Algorithm                     ║");
+        System.out.println("╚═══════════════════════════════════════════════════════════╝");
+        System.out.println();
+    }
+
+    private static void printConfiguration(MiningConfiguration config) {
+        System.out.println("Configuration:");
+        System.out.printf("  Database file     : %s%n", config.databaseFile);
+        System.out.printf("  Tau (threshold)   : %.2f%n", config.tau);
+        System.out.printf("  K (top patterns)  : %d%n", config.k);
+        System.out.printf("  Parallelization   : %s%n", config.parallelMode.getDescription());
+        System.out.printf("  Support Calculator: %s%n", describeSupportCalculator(config.supportType));
+        System.out.println();
+    }
+
+    private static void printMinerConfiguration(MiningConfiguration config, String actualCalculator) {
+        System.out.println("Mining Configuration Details:");
+        System.out.println("─".repeat(65));
+        System.out.printf("  %-25s : %s%n", "Algorithm", "TUFCI (Top-K Uncertain Frequent Closed Itemsets)");
+        System.out.printf("  %-25s : %s%n", "Parallelization Mode", config.parallelMode.name());
+        System.out.println();
+
+        System.out.println("  Phase Execution Modes:");
+        System.out.printf("    %-23s : %s%n", "Phase 1 (Singletons)",
+            describeParallelMode(config.parallelMode.isPhase1Parallel()));
+        System.out.printf("    %-23s : %s%n", "Phase 2 (Closure Check)",
+            describeParallelMode(config.parallelMode.isPhase2ClosureCheckParallel()));
+        System.out.printf("    %-23s : %s%n", "Phase 3 (Extensions)",
+            describeParallelMode(config.parallelMode.isPhase3ExtensionGenerationParallel()));
+        System.out.println();
+
+        System.out.println("  Support Calculator:");
+        System.out.printf("    %-23s : %s%n", "Type", actualCalculator);
+        System.out.printf("    %-23s : %s%n", "Parallelized",
+            describeYesNo(config.parallelMode.isSupportCalculatorParallel()));
+        System.out.printf("    %-23s : %s%n", "Requested",
+            config.supportType == SupportCalculatorType.AUTO ? "AUTO" : config.supportType.name());
+
+        if (config.supportType == SupportCalculatorType.AUTO) {
+            System.out.printf("    %-23s : %s%n", "Auto-Selected",
+                getAutoSelectionReason(config.parallelMode));
+        }
+
+        System.out.println("─".repeat(65));
+        System.out.println();
+    }
+
+    private static void printVerboseOutput(MiningConfiguration config, UncertainDatabase database, MiningResult result) {
+        PhaseTimingObserver observer = new PhaseTimingObserver();
+
+        ResultExporter.printPublicationSummary(
+            config.databaseFile,
+            database.size(),
+            database.getVocabulary().size(),
+            config.tau,
+            config.k,
+            config.parallelMode.name(),
+            describeSupportCalculator(config.supportType),
+            observer,
+            result.executionTimeMs,
+            result.memoryUsed,
+            result.patterns.size()
+        );
+
+        Usage.printResults(result.patterns, config.k);
+    }
+
+    private static void printQuietModeOutput(MiningConfiguration config, UncertainDatabase database, MiningResult result) {
+        PhaseTimingObserver observer = new PhaseTimingObserver();
+
+        System.out.printf("%s,%d,%d,%d,%d,%d,%d,%d%n",
+            config.databaseFile,
+            database.size(),
+            database.getVocabulary().size(),
+            config.k,
+            observer.getPhase1Time(),
+            observer.getPhase2Time(),
+            observer.getPhase3Time(),
+            result.executionTimeMs
+        );
+    }
+
+    private static String describeSupportCalculator(SupportCalculatorType type) {
         switch (type) {
             case DIRECT:
                 return "Direct Convolution (O(n²) DP)";
@@ -290,73 +377,58 @@ public class Main {
         }
     }
 
-    /**
-     * Parse a string-valued flag from command-line arguments.
-     * Example: --output-csv results.csv
-     *
-     * @param args command-line arguments
-     * @param flagName the flag to search for (e.g., "--output-csv")
-     * @return the value after the flag, or null if flag not found
-     */
-    private static String parseStringFlag(String[] args, String flagName) {
-        for (int i = 0; i < args.length; i++) {
-            if (args[i].equals(flagName)) {
-                if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
-                    return args[i + 1];
-                } else {
-                    System.err.println("Warning: " + flagName + " requires a value");
-                    return null;
-                }
-            }
-        }
-        return null;
+    private static String describeMode(boolean isParallel) {
+        return isParallel ? "Parallel" : "Sequential";
     }
 
-    /**
-     * Check if a boolean flag is present in command-line arguments.
-     * Example: --quiet
-     *
-     * @param args command-line arguments
-     * @param flagName the flag to search for
-     * @return true if flag is present, false otherwise
-     */
-    private static boolean hasFlag(String[] args, String flagName) {
-        for (String arg : args) {
-            if (arg.equals(flagName)) {
-                return true;
-            }
-        }
-        return false;
+    private static String describeParallelMode(boolean isParallel) {
+        return isParallel ? "Parallel (multi-threaded)" : "Sequential (single-threaded)";
     }
 
-    /**
-     * Exports performance metrics to CSV file in IEEE publication format.
-     *
-     * Creates the file with header if it doesn't exist.
-     * Appends metrics row if file already exists.
-     *
-     * @param metrics the PerformanceMetrics object to export
-     * @param csvFilePath path to the CSV file
-     */
+    private static String describeYesNo(boolean value) {
+        return value ? "Yes" : "No";
+    }
+
+    private static String getAutoSelectionReason(ParallelizationMode mode) {
+        if (mode.isSupportCalculatorParallel()) {
+            return "ParallelRecursive (mode requires parallel support)";
+        } else {
+            return "Recursive (mode requires sequential support)";
+        }
+    }
+
+    private static String getActualCalculatorName(TUFCI miner) {
+        String calculatorClassName = miner.getSupportCalculatorClassName();
+
+        switch (calculatorClassName) {
+            case "DirectConvolutionSupportCalculator":
+                return "Direct Convolution (O(n²) DP)";
+            case "RecursiveConvolutionSupportCalculator":
+                return "Recursive Convolution (O(n² log n) D&C)";
+            case "ParallelRecursiveConvolutionSupportCalculator":
+                return "Parallel Recursive Convolution (O(n² log n / p) Fork/Join)";
+            case "FFTConvolutionSupportCalculator":
+                return "FFT Convolution (O(n log² n) Cooley-Tukey)";
+            case "ParallelFFTConvolutionSupportCalculator":
+                return "Parallel FFT Convolution (O(n log² n / p) Fork/Join)";
+            default:
+                return calculatorClassName;
+        }
+    }
+
+    // ==================== Export Utilities ====================
+
     private static void exportMetricsToCSV(PerformanceMetrics metrics, String csvFilePath) {
         try {
             File csvFile = new File(csvFilePath);
             boolean fileExists = csvFile.exists();
 
-            // Create parent directories if they don't exist
-            File parentDir = csvFile.getParentFile();
-            if (parentDir != null && !parentDir.exists()) {
-                parentDir.mkdirs();
-            }
+            ensureParentDirectoryExists(csvFile);
 
-            // Open file in append mode
             try (PrintWriter writer = new PrintWriter(new FileWriter(csvFile, true))) {
-                // Write header if this is a new file
                 if (!fileExists) {
                     writer.println(PerformanceMetrics.getCSVHeader());
                 }
-
-                // Write metrics data
                 writer.println(metrics.toCSV());
             }
 
@@ -366,4 +438,93 @@ public class Main {
         }
     }
 
+    private static void exportLaTeXTable(MiningConfiguration config, UncertainDatabase database, MiningResult result) throws IOException {
+        PhaseTimingObserver observer = new PhaseTimingObserver();
+
+        ResultExporter.exportLaTeXTable(
+            config.latexOutput,
+            config.databaseFile,
+            database.size(),
+            database.getVocabulary().size(),
+            config.tau,
+            config.k,
+            config.parallelMode.name(),
+            observer,
+            result.executionTimeMs,
+            result.memoryUsed,
+            result.patterns.size()
+        );
+    }
+
+    // ==================== Helper Methods ====================
+
+    private static long getUsedMemory(Runtime runtime) {
+        return runtime.totalMemory() - runtime.freeMemory();
+    }
+
+    private static String extractDatasetName(String filePath) {
+        return new File(filePath).getName().replaceAll("\\.txt$", "");
+    }
+
+    private static int generateRunId() {
+        return (int) (System.currentTimeMillis() % RUN_ID_MODULO);
+    }
+
+    private static void ensureParentDirectoryExists(File file) {
+        File parentDir = file.getParentFile();
+        if (parentDir != null && !parentDir.exists()) {
+            parentDir.mkdirs();
+        }
+    }
+
+    // ==================== Inner Classes ====================
+
+    /**
+     * Immutable configuration object for mining parameters.
+     */
+    private static class MiningConfiguration {
+        final String databaseFile;
+        final double tau;
+        final int k;
+        final ParallelizationMode parallelMode;
+        final SupportCalculatorType supportType;
+        final String csvOutput;
+        final String latexOutput;
+        final String patternsOutput;
+        final boolean quietMode;
+
+        MiningConfiguration(String databaseFile, double tau, int k,
+                          ParallelizationMode parallelMode,
+                          SupportCalculatorType supportType,
+                          String csvOutput, String latexOutput,
+                          String patternsOutput, boolean quietMode) {
+            this.databaseFile = databaseFile;
+            this.tau = tau;
+            this.k = k;
+            this.parallelMode = parallelMode;
+            this.supportType = supportType;
+            this.csvOutput = csvOutput;
+            this.latexOutput = latexOutput;
+            this.patternsOutput = patternsOutput;
+            this.quietMode = quietMode;
+        }
+    }
+
+    /**
+     * Container for mining execution results.
+     */
+    private static class MiningResult {
+        final List<FrequentItemset> patterns;
+        final PerformanceMetrics metrics;
+        final long executionTimeMs;
+        final long memoryUsed;
+
+        MiningResult(List<FrequentItemset> patterns, PerformanceMetrics metrics,
+                    long executionTimeMs, long memoryUsed) {
+            this.patterns = patterns;
+            this.metrics = metrics;
+            this.executionTimeMs = executionTimeMs;
+            this.memoryUsed = memoryUsed;
+        }
+    }
 }

@@ -219,6 +219,16 @@ public class TUFCI extends AbstractMiner {
         }
     }
 
+    /**
+     * Get the name of the actual support calculator being used.
+     * This is useful for displaying configuration information to users.
+     *
+     * @return the simple class name of the support calculator
+     */
+    public String getSupportCalculatorClassName() {
+        return getCalculator().getClass().getSimpleName();
+    }
+
     // ==================== Phase 1: Compute Frequent 1-Itemsets ====================
     // Implemented in AbstractFrequentItemsetMiner - no override needed
 
