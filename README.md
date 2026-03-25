@@ -39,7 +39,7 @@ TUFCI is a high-performance algorithm for discovering the top-K most frequent cl
 
 ```bash
 # Clone the repository
-git clone [REPOSITORY_URL]
+git clone https://github.com/DRuanli/HuyNguyenThien
 cd HuyNguyenThien_TUFCI
 
 # Compile the project
@@ -116,13 +116,13 @@ TUFCI uses a carefully designed parallelization strategy that avoids nested para
 
 ## Support Calculators
 
-| Type | Algorithm | Complexity | Best For |
-|------|-----------|------------|----------|
-| `direct` | Direct convolution DP | O(n²) | Small transactions |
-| `recursive` | Recursive divide-and-conquer | O(n² log n) | General purpose |
-| `parallel` | Parallel recursive | O(n² log n / p) | Multi-core systems |
-| `fft` | FFT convolution | O(n log² n) | Long transactions |
-| `parallelfft` | Parallel FFT | O(n log² n / p) | Long transactions + multi-core |
+| Type | Algorithm |
+|------|-----------|
+| `direct` | Direct convolution DP |
+| `recursive` | Recursive divide-and-conquer |
+| `parallel` | Parallel recursive  |
+| `fft` | FFT convolution |
+| `parallelfft` | Parallel FFT |
 
 **Priority Rule**: When `--parallel` and `--support` flags conflict, the parallelization mode takes precedence. For example:
 - `--parallel onlySupport --support recursive` → Uses **ParallelRecursive** (mode overrides)
@@ -165,19 +165,6 @@ We provide 4 experiment scripts for comprehensive evaluation:
 ```
 
 Results saved to `result/` directory with detailed performance metrics.
-
-## Reproducibility
-
-For complete step-by-step instructions to reproduce all experimental results, see **[REPRODUCIBILITY.md](REPRODUCIBILITY.md)**.
-
-This guide includes:
-- Detailed hardware/software requirements
-- Expected execution times for all experiments
-- Validation procedures
-- Troubleshooting common issues
-- Expected result ranges
-
-**IEEE Access Compliance:** Our reproducibility documentation meets IEEE Access requirements for research reproducibility.
 
 ## Project Structure
 
@@ -227,18 +214,6 @@ TUFCI employs a three-phase architecture:
 
 **Mathematical Foundation:** Uses generating functions to compute probabilistic support via polynomial convolution.
 
-## Performance
-
-**Typical performance** on reference hardware (Intel Xeon, 16 cores, 64GB RAM):
-
-| Dataset | Sequential | Full Parallel | Speedup |
-|---------|-----------|---------------|---------|
-| Chess (k=50) | 1,200 ms | 450 ms | 2.7× |
-| Retail (k=100) | 6,800 ms | 2,100 ms | 3.2× |
-| Chainstore (k=100) | 18,500 ms | 7,200 ms | 2.6× |
-
-**Note:** Performance varies with hardware. Speedup consistently 2-4× on 8+ cores.
-
 ## Testing
 
 Run correctness tests to verify algorithm behavior:
@@ -272,9 +247,7 @@ If you use this code in your research, please cite:
 
 ## License
 
-[Action Required: Add LICENSE file - recommend Apache 2.0 or MIT]
-
-Copyright 2026 [Your Names]. Licensed under the Apache License, Version 2.0.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contributing
 
@@ -292,15 +265,6 @@ This work builds upon:
 - **Top-K mining:** Han et al. (2002), Fu et al. (2000)
 - **Parallel mining:** Zaki et al. (1997), Li et al. (2008)
 
-## Support
-
-- **Documentation:** See [REPRODUCIBILITY.md](REPRODUCIBILITY.md)
-- **Issues:** [Repository Issues URL]
-- **Contact:** [Author Email]
-
-## Acknowledgments
-
-[Add funding sources, computing resources, collaborators]
 
 ---
 

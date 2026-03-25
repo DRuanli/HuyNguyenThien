@@ -42,7 +42,7 @@ public class Main {
                 return;
             }
 
-            MiningConfiguration config = parseConfiguration(args);
+            CommandLineConfig config = parseConfiguration(args);
             executeMiningPipeline(config);
 
         } catch (IllegalArgumentException e) {
@@ -59,7 +59,7 @@ public class Main {
     /**
      * Executes the complete mining pipeline.
      */
-    private static void executeMiningPipeline(MiningConfiguration config) throws IOException {
+    private static void executeMiningPipeline(CommandLineConfig config) throws IOException {
         UncertainDatabase database = loadDatabase(config);
         TUFCI miner = configureMiner(config, database);
 
@@ -72,7 +72,7 @@ public class Main {
     /**
      * Loads and validates the database from file.
      */
-    private static UncertainDatabase loadDatabase(MiningConfiguration config) throws IOException {
+    private static UncertainDatabase loadDatabase(CommandLineConfig config) throws IOException {
         printBanner();
         printConfiguration(config);
 
@@ -89,7 +89,7 @@ public class Main {
     /**
      * Configures the TUFCI miner with appropriate settings.
      */
-    private static TUFCI configureMiner(MiningConfiguration config, UncertainDatabase database) {
+    private static TUFCI configureMiner(CommandLineConfig config, UncertainDatabase database) {
         System.out.println("Creating TUFCI miner...");
 
         TUFCI miner = MinerFactory.createMiner(
@@ -115,7 +115,7 @@ public class Main {
     /**
      * Executes the mining algorithm and collects metrics.
      */
-    private static MiningResult executeMining(TUFCI miner, MiningConfiguration config) {
+    private static MiningResult executeMining(TUFCI miner, CommandLineConfig config) {
         System.out.println("Starting mining process...");
         System.out.println(SEPARATOR);
 
@@ -225,7 +225,7 @@ public class Main {
     /**
      * Displays mining results to console.
      */
-    private static void displayResults(MiningConfiguration config, UncertainDatabase database, MiningResult result) {
+    private static void displayResults(CommandLineConfig config, UncertainDatabase database, MiningResult result) {
         if (config.quietMode) {
             printQuietModeOutput(config, database, result);
         } else {
@@ -236,7 +236,7 @@ public class Main {
     /**
      * Exports results to specified output files.
      */
-    private static void exportResults(MiningConfiguration config, UncertainDatabase database, MiningResult result) throws IOException {
+    private static void exportResults(CommandLineConfig config, UncertainDatabase database, MiningResult result) throws IOException {
         if (config.csvOutput != null) {
             exportMetricsToCSV(result.metrics, config.csvOutput);
             System.out.println("Performance metrics exported to: " + config.csvOutput);
@@ -259,8 +259,8 @@ public class Main {
         return args.length < 1 || hasFlag(args, "--help") || hasFlag(args, "-h");
     }
 
-    private static MiningConfiguration parseConfiguration(String[] args) {
-        return new MiningConfiguration(
+    private static CommandLineConfig parseConfiguration(String[] args) {
+        return new CommandLineConfig(
             args[0],
             parseDouble(args, 1, 0.7),
             parseInt(args, 2, 5),
@@ -370,7 +370,7 @@ public class Main {
         System.out.println();
     }
 
-    private static void printConfiguration(MiningConfiguration config) {
+    private static void printConfiguration(CommandLineConfig config) {
         System.out.println("Configuration:");
         System.out.printf("  Database file     : %s%n", config.databaseFile);
         System.out.printf("  Tau (threshold)   : %.2f%n", config.tau);
@@ -380,7 +380,7 @@ public class Main {
         System.out.println();
     }
 
-    private static void printMinerConfiguration(MiningConfiguration config, String actualCalculator) {
+    private static void printMinerConfiguration(CommandLineConfig config, String actualCalculator) {
         System.out.println("Mining Configuration Details:");
         System.out.println("─".repeat(65));
         System.out.printf("  %-25s : %s%n", "Algorithm", "TUFCI (Top-K Uncertain Frequent Closed Itemsets)");
@@ -412,7 +412,7 @@ public class Main {
         System.out.println();
     }
 
-    private static void printVerboseOutput(MiningConfiguration config, UncertainDatabase database, MiningResult result) {
+    private static void printVerboseOutput(CommandLineConfig config, UncertainDatabase database, MiningResult result) {
         // Create observer from metrics
         PhaseTimingObserver observer = new PhaseTimingObserver();
         // Observer doesn't have setters, so we use metrics directly in printPublicationSummary
@@ -435,7 +435,7 @@ public class Main {
         Usage.printResults(result.patterns, config.k);
     }
 
-    private static void printQuietModeOutput(MiningConfiguration config, UncertainDatabase database, MiningResult result) {
+    private static void printQuietModeOutput(CommandLineConfig config, UncertainDatabase database, MiningResult result) {
         PhaseTimingObserver observer = new PhaseTimingObserver();
 
         System.out.printf("%s,%d,%d,%d,%d,%d,%d,%d%n",
@@ -530,7 +530,7 @@ public class Main {
         }
     }
 
-    private static void exportLaTeXTable(MiningConfiguration config, UncertainDatabase database, MiningResult result) throws IOException {
+    private static void exportLaTeXTable(CommandLineConfig config, UncertainDatabase database, MiningResult result) throws IOException {
         PhaseTimingObserver observer = new PhaseTimingObserver();
 
         ResultExporter.exportLaTeXTable(
@@ -637,9 +637,13 @@ public class Main {
     // ==================== Inner Classes ====================
 
     /**
-     * Immutable configuration object for mining parameters.
+     * Immutable configuration object for CLI execution parameters.
+     * Includes both mining parameters and output/formatting options.
+     *
+     * Distinct from application.config.MiningConfiguration which contains only
+     * core algorithm parameters.
      */
-    private static class MiningConfiguration {
+    private static class CommandLineConfig {
         final String databaseFile;
         final double tau;
         final int k;
@@ -650,7 +654,7 @@ public class Main {
         final String patternsOutput;
         final boolean quietMode;
 
-        MiningConfiguration(String databaseFile, double tau, int k,
+        CommandLineConfig(String databaseFile, double tau, int k,
                           ParallelizationMode parallelMode,
                           SupportCalculatorType supportType,
                           String csvOutput, String latexOutput,

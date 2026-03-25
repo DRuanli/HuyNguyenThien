@@ -1,7 +1,20 @@
 package application.config;
 
 /**
- * Enum for different support calculator types
+ * Enumeration of support calculator types available in TUFCI.
+ *
+ * Support calculation computes the expected support of an itemset in uncertain databases
+ * using polynomial convolution of probability distributions.
+ *
+ * Each type offers different trade-offs between time complexity and implementation approach:
+ * - DIRECT: Simple dynamic programming, best for small transactions
+ * - RECURSIVE: Divide-and-conquer, good general-purpose algorithm
+ * - PARALLEL: Parallel D&C using Fork/Join, best for multi-core systems
+ * - FFT: Fast Fourier Transform-based, optimal for long transactions
+ * - PARALLEL_FFT: Parallel FFT, combines FFT efficiency with parallelism
+ * - AUTO: Automatically selects based on parallelization mode
+ *
+ * @author Dang Nguyen Le, Gia Huy Vo
  */
 public enum SupportCalculatorType {
     /**
@@ -41,7 +54,19 @@ public enum SupportCalculatorType {
     }
 
     /**
-     * Parse support calculator type from string (case-insensitive)
+     * Parse support calculator type from string (case-insensitive).
+     *
+     * Accepts various aliases for each type:
+     * - "direct", "DCS", "DirectConvolutionSupport" → DIRECT
+     * - "recursive", "RCS", "RecursiveConvolutionSupport" → RECURSIVE
+     * - "parallel", "PRC", "ParallelRecursiveConvolution" → PARALLEL
+     * - "fft", "FFT", "FFTConvolutionSupport" → FFT
+     * - "parallelfft", "PFFT", "ParallelFFTConvolution" → PARALLEL_FFT
+     * - "auto" → AUTO
+     *
+     * @param value the string to parse (case-insensitive, whitespace-trimmed)
+     * @return the corresponding SupportCalculatorType
+     * @throws IllegalArgumentException if value is not a valid type
      */
     public static SupportCalculatorType fromString(String value) {
         if (value == null || value.trim().isEmpty()) {
@@ -64,6 +89,11 @@ public enum SupportCalculatorType {
         );
     }
 
+    /**
+     * Get all string aliases for this calculator type.
+     *
+     * @return array of alias strings that can be used to reference this type
+     */
     public String[] getAliases() {
         return aliases;
     }
