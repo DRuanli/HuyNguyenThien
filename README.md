@@ -208,10 +208,6 @@ TUFCI employs a three-phase architecture:
 
 **Mathematical Foundation:** Uses generating functions to compute probabilistic support via polynomial convolution.
 
-## Testing
-
-Run correctness tests to verify algorithm behavior:
-
 ```bash
 javac -cp bin:src/test/java -d bin src/test/java/domain/mining/CorrectnessTest.java
 java -cp bin org.junit.runner.JUnitCore domain.mining.CorrectnessTest
@@ -222,27 +218,6 @@ Tests verify:
 - Top-K ranking (descending by support)
 - Parallel equivalence (same results as sequential)
 - Support correctness (probabilistic support calculation)
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-We welcome contributions! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with tests
-4. Submit a pull request
-
-## Related Work
-
-This work builds upon:
-- **Uncertain data mining:** Chui et al. (2007), Aggarwal & Yu (2009)
-- **Closed itemset mining:** Pasquier et al. (1999), Zaki & Gouda (2003)
-- **Top-K mining:** Han et al. (2002), Fu et al. (2000)
-- **Parallel mining:** Zaki et al. (1997), Li et al. (2008)
-
 
 ---
 
