@@ -151,17 +151,12 @@ See `REPRODUCIBILITY.md` for complete override behavior documentation.
 We provide 4 experiment scripts for comprehensive evaluation:
 
 ```bash
-# 1. Parallelization mode comparison (30-50 hours)
-./run_comparison_parallel.sh
+# 1. Parallelization mode comparison
+./run_comparison_parallel_modes.sh
 
-# 2. Scalability analysis (20-30 hours)
-./run_comparison_scalability.sh
+# 2. Support calculator comparison
+./run_comparison_support_calculators.sh
 
-# 3. Support calculator comparison (1-2 hours)
-./run_comparison_support.sh
-
-# 4. Parameter sensitivity (2-3 hours)
-./run_sensitivity_tau.sh
 ```
 
 Results saved to `result/` directory with detailed performance metrics.
@@ -182,8 +177,7 @@ HuyNguyenThien_TUFCI/
 ├── src/test/java/               # Unit tests
 ├── data/                        # 7 uncertain datasets
 ├── result/                      # Experimental results (generated)
-├── run_*.sh                     # Experiment scripts (4 scripts)
-└── spmf_to_uncertain.py        # Dataset conversion utility
+└── run_*.sh                     # Experiment scripts (4 scripts)
 ```
 
 ## Algorithm Overview
@@ -228,22 +222,6 @@ Tests verify:
 - Top-K ranking (descending by support)
 - Parallel equivalence (same results as sequential)
 - Support correctness (probabilistic support calculation)
-
-## Citation
-
-If you use this code in your research, please cite:
-
-```bibtex
-@article{TUFCI2026,
-  author    = {[Your Names]},
-  title     = {TUFCI: Top-K Uncertain Frequent Closed Itemset Mining},
-  journal   = {IEEE Access},
-  year      = {2026},
-  volume    = {[TBD]},
-  pages     = {[TBD]},
-  doi       = {[TBD]}
-}
-```
 
 ## License
 
