@@ -14,6 +14,12 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.io.File;
 import java.util.List;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.MemoryUsage;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.MemoryType;
 
 /**
  * Main entry point for TUFCI mining algorithm.
@@ -113,18 +119,101 @@ public class Main {
         System.out.println("Starting mining process...");
         System.out.println(SEPARATOR);
 
+        MemoryMXBean memoryBean = ManagementFactory.getMemoryMXBean();
         Runtime runtime = Runtime.getRuntime();
-        runtime.gc(); // Suggest GC for accurate memory measurement
 
-        long memoryBefore = getUsedMemory(runtime);
+        // ============================================================================
+        // Enhanced GC with Verification (IEEE Access Compliant)
+        // ============================================================================
+
+        long gcCountBefore = getGCCount();
+
+        // Enhanced GC: Multiple calls increase likelihood of actual execution
+        runtime.gc();
+        try {
+            Thread.sleep(100); // Allow GC to complete
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        runtime.gc(); // Second call for additional cleanup
+
+        try {
+            Thread.sleep(50); // Additional time for cleanup
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        // Verify GC actually executed
+        long gcCountAfter = getGCCount();
+        if (gcCountAfter <= gcCountBefore) {
+            System.err.println("WARNING: Garbage collection may not have executed!");
+            System.err.println("  GC count before: " + gcCountBefore);
+            System.err.println("  GC count after: " + gcCountAfter);
+        }
+
+        // ============================================================================
+        // Memory Baseline Establishment (Peak Tracking - IEEE Access Compliant)
+        // ============================================================================
+
+        // Reset peak memory tracking for all heap pools
+        // This establishes baseline so we measure only algorithm memory consumption
+        resetPeakMemoryUsage();
+        long baselineMemory = getCurrentHeapMemory();
+
         long startTime = System.nanoTime();
 
+        // Execute mining algorithm
         List<FrequentItemset> patterns = miner.mine();
         PerformanceMetrics metrics = miner.getMetrics();
 
         long endTime = System.nanoTime();
         long executionTimeMs = (endTime - startTime) / 1_000_000;
-        long memoryUsed = getUsedMemory(runtime) - memoryBefore;
+
+        // ============================================================================
+        // Peak Memory Measurement (IEEE Access Compliant)
+        // ============================================================================
+
+        // Get ACTUAL peak heap memory usage during execution using MemoryPoolMXBean
+        // This tracks the maximum memory used, even if later freed by GC
+        long peakMemoryUsed = getPeakHeapMemory();
+
+        // Also get current heap info for validation
+        MemoryUsage heapUsage = memoryBean.getHeapMemoryUsage();
+        long currentMemory = heapUsage.getUsed();
+        long peakMemoryCommitted = heapUsage.getCommitted();
+        long maxMemory = heapUsage.getMax();
+
+        // Calculate memory consumed by algorithm (peak - baseline)
+        long memoryUsed = peakMemoryUsed - baselineMemory;
+
+        // Validation: Ensure memory measurement is reasonable
+        if (memoryUsed < 0) {
+            System.err.println("WARNING: Negative memory usage detected!");
+            System.err.println("  Baseline: " + (baselineMemory / (1024.0 * 1024.0)) + " MB");
+            System.err.println("  Peak: " + (peakMemoryUsed / (1024.0 * 1024.0)) + " MB");
+            System.err.println("  Current: " + (currentMemory / (1024.0 * 1024.0)) + " MB");
+            memoryUsed = peakMemoryUsed; // Fallback to absolute peak
+        }
+
+        // IEEE Access: Validation that peak >= current (sanity check)
+        if (peakMemoryUsed < currentMemory) {
+            System.err.println("WARNING: Peak memory less than current memory!");
+            System.err.println("  This indicates a measurement error.");
+        }
+
+        // IEEE Access: Log memory measurement details for reproducibility
+        // (Enable this for debugging memory measurements)
+        // System.out.println("\nMemory Measurement Details:");
+        // System.out.printf("  Baseline Memory:  %,.2f MB%n", baselineMemory / (1024.0 * 1024.0));
+        // System.out.printf("  Peak Memory:      %,.2f MB%n", peakMemoryUsed / (1024.0 * 1024.0));
+        // System.out.printf("  Committed Heap:   %,.2f MB%n", peakMemoryCommitted / (1024.0 * 1024.0));
+        // System.out.printf("  Max Heap:         %,.2f MB%n", maxMemory / (1024.0 * 1024.0));
+        // System.out.printf("  Algorithm Usage:  %,.2f MB%n", memoryUsed / (1024.0 * 1024.0));
+
+        // Set peak memory into metrics for ResultExporter
+        if (metrics != null) {
+            metrics.setPeakMemoryBytes(peakMemoryUsed);
+        }
 
         System.out.println(SEPARATOR);
         System.out.println("Mining completed!");
@@ -324,7 +413,9 @@ public class Main {
     }
 
     private static void printVerboseOutput(MiningConfiguration config, UncertainDatabase database, MiningResult result) {
+        // Create observer from metrics
         PhaseTimingObserver observer = new PhaseTimingObserver();
+        // Observer doesn't have setters, so we use metrics directly in printPublicationSummary
 
         ResultExporter.printPublicationSummary(
             config.databaseFile,
@@ -337,7 +428,8 @@ public class Main {
             observer,
             result.executionTimeMs,
             result.memoryUsed,
-            result.patterns.size()
+            result.patterns.size(),
+            result.metrics  // Pass metrics for phase-level data
         );
 
         Usage.printResults(result.patterns, config.k);
@@ -458,8 +550,73 @@ public class Main {
 
     // ==================== Helper Methods ====================
 
-    private static long getUsedMemory(Runtime runtime) {
-        return runtime.totalMemory() - runtime.freeMemory();
+    /**
+     * Gets the total number of garbage collection events across all GC algorithms.
+     * Used to verify that System.gc() actually executed.
+     *
+     * @return Total GC count across all collectors
+     */
+    private static long getGCCount() {
+        long count = 0;
+        for (GarbageCollectorMXBean gc : ManagementFactory.getGarbageCollectorMXBeans()) {
+            long gcCount = gc.getCollectionCount();
+            if (gcCount > 0) {
+                count += gcCount;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Resets peak memory usage tracking for all heap memory pools.
+     * This establishes a baseline for measuring algorithm memory consumption.
+     *
+     * IEEE Access Requirement: Peak memory tracking must be reset before measurement
+     * to isolate algorithm memory from JVM overhead and pre-existing allocations.
+     */
+    private static void resetPeakMemoryUsage() {
+        for (MemoryPoolMXBean pool : ManagementFactory.getMemoryPoolMXBeans()) {
+            if (pool.getType() == MemoryType.HEAP) {
+                pool.resetPeakUsage();
+            }
+        }
+    }
+
+    /**
+     * Gets PEAK heap memory usage across all heap pools.
+     * This tracks the maximum memory used since last reset or JVM start.
+     *
+     * IEEE Access Compliant: Measures actual peak, including temporary allocations
+     * that may have been freed by GC before measurement completes.
+     *
+     * @return Peak heap memory used in bytes (sum across all heap pools)
+     */
+    private static long getPeakHeapMemory() {
+        long totalPeak = 0;
+        for (MemoryPoolMXBean pool : ManagementFactory.getMemoryPoolMXBeans()) {
+            if (pool.getType() == MemoryType.HEAP) {
+                MemoryUsage peakUsage = pool.getPeakUsage();
+                totalPeak += peakUsage.getUsed();
+            }
+        }
+        return totalPeak;
+    }
+
+    /**
+     * Gets CURRENT heap memory usage across all heap pools.
+     * This provides a snapshot of memory at the current moment.
+     *
+     * @return Current heap memory used in bytes (sum across all heap pools)
+     */
+    private static long getCurrentHeapMemory() {
+        long totalCurrent = 0;
+        for (MemoryPoolMXBean pool : ManagementFactory.getMemoryPoolMXBeans()) {
+            if (pool.getType() == MemoryType.HEAP) {
+                MemoryUsage usage = pool.getUsage();
+                totalCurrent += usage.getUsed();
+            }
+        }
+        return totalCurrent;
     }
 
     private static String extractDatasetName(String filePath) {

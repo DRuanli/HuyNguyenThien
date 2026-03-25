@@ -503,7 +503,9 @@ public abstract class AbstractMiner {
             // Compute expected support and probability using Generating Function approach
             // supportResult[0] = expected support (number of transactions)
             // supportResult[1] = probability of appearing in at least one transaction
+            metricsCollector.startSupportCalculation();
             double[] supportResult = calc.computeProbabilisticSupportFromTidset(tidset, db.size());
+            metricsCollector.endSupportCalculation();
 
             int support = (int) supportResult[0];
             double probability = supportResult[1];
@@ -636,11 +638,15 @@ public abstract class AbstractMiner {
     protected boolean checkClosure1Itemset(FrequentItemset oneItemFI, int supOneItem,
                                          List<FrequentItemset> frequent1Itemset, int minsup) {
         // Dispatch to parallel or sequential implementation
+        metricsCollector.startClosureCheck();
+        boolean result;
         if (parallelizationMode.isPhase2ClosureCheckParallel()) {
-            return checkClosure1ItemsetParallel(oneItemFI, supOneItem, frequent1Itemset, minsup);
+            result = checkClosure1ItemsetParallel(oneItemFI, supOneItem, frequent1Itemset, minsup);
         } else {
-            return checkClosure1ItemsetSequential(oneItemFI, supOneItem, frequent1Itemset, minsup);
+            result = checkClosure1ItemsetSequential(oneItemFI, supOneItem, frequent1Itemset, minsup);
         }
+        metricsCollector.endClosureCheck();
+        return result;
     }
 
     /**
@@ -695,7 +701,9 @@ public abstract class AbstractMiner {
 
                 if (!tidsetAB.isEmpty()) {
                     // Compute support using the Generating Function calculator
+                    metricsCollector.startSupportCalculation();
                     double[] result = getCalculator().computeProbabilisticSupportFromTidset(tidsetAB, getDatabase().size());
+                    metricsCollector.endSupportCalculation();
                     supAB = (int) result[0];
                     probAB = result[1];
                 } else {
@@ -798,7 +806,9 @@ public abstract class AbstractMiner {
 
                     if (!tidsetAB.isEmpty()) {
                         // Compute support using the calculator
+                        metricsCollector.startSupportCalculation();
                         double[] result = getCalculator().computeProbabilisticSupportFromTidset(tidsetAB, getDatabase().size());
+                        metricsCollector.endSupportCalculation();
                         supAB = (int) result[0];
                         probAB = result[1];
                     } else {
@@ -855,11 +865,15 @@ public abstract class AbstractMiner {
      */
     protected ClosureCheckResult checkClosureAndGenerateExtensions(FrequentItemset candidate, int threshold) {
         // Dispatch to parallel or sequential implementation
+        metricsCollector.startClosureCheck();
+        ClosureCheckResult result;
         if (parallelizationMode.isPhase3ExtensionGenerationParallel() && frequentItemCount > PARALLEL_EXTENSION_THRESHOLD) {
-            return checkClosureAndGenerateExtensionsParallel(candidate, threshold);
+            result = checkClosureAndGenerateExtensionsParallel(candidate, threshold);
         } else {
-            return checkClosureAndGenerateExtensionsSequential(candidate, threshold);
+            result = checkClosureAndGenerateExtensionsSequential(candidate, threshold);
         }
+        metricsCollector.endClosureCheck();
+        return result;
     }
 
     /**
@@ -1087,8 +1101,10 @@ public abstract class AbstractMiner {
                  * All the pruning strategies above aim to avoid this computation
                  * when we know the result won't be useful.
                  */
+                metricsCollector.startSupportCalculation();
                 double[] result = getCalculator().computeProbabilisticSupportFromTidset(
                         tidsetXe, getDatabase().size());
+                metricsCollector.endSupportCalculation();
                 supXe = (int) result[0];
                 probXe = result[1];
 
@@ -1267,8 +1283,10 @@ public abstract class AbstractMiner {
                     /**
                      * Compute actual support
                      */
+                    metricsCollector.startSupportCalculation();
                     double[] result = getCalculator().computeProbabilisticSupportFromTidset(
                             tidsetXe, getDatabase().size());
+                    metricsCollector.endSupportCalculation();
                     supXe = (int) result[0];
                     probXe = result[1];
 

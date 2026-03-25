@@ -2,6 +2,7 @@ package presentation;
 
 import domain.model.FrequentItemset;
 import domain.observer.PhaseTimingObserver;
+import infrastructure.metrics.PerformanceMetrics;
 
 import java.io.FileWriter;
 import java.io.IOException;
@@ -276,7 +277,8 @@ public class ResultExporter {
                                               PhaseTimingObserver observer,
                                               long totalTime,
                                               long memoryUsed,
-                                              int patternCount) {
+                                              int patternCount,
+                                              PerformanceMetrics metrics) {
 
         String datasetName = extractDatasetName(dbFile);
 
@@ -300,10 +302,40 @@ public class ResultExporter {
 
         System.out.println("EXECUTION TIME:");
         System.out.printf(Locale.US, "  Total Time       : %,10d ms%n", totalTime);
+        // Use metrics for phase times (more accurate than observer which may be empty)
+        if (metrics != null) {
+            long phase1Time = (long) metrics.getPhase1TimeMillis();
+            long phase2Time = (long) metrics.getPhase2TimeMillis();
+            long phase3Time = (long) metrics.getPhase3TimeMillis();
+            if (phase1Time > 0 || phase2Time > 0 || phase3Time > 0) {
+                System.out.printf(Locale.US, "  Phase 1 Time     : %,10d ms (%.1f%%)%n", phase1Time, totalTime > 0 ? phase1Time*100.0/totalTime : 0);
+                System.out.printf(Locale.US, "  Phase 2 Time     : %,10d ms (%.1f%%)%n", phase2Time, totalTime > 0 ? phase2Time*100.0/totalTime : 0);
+                System.out.printf(Locale.US, "  Phase 3 Time     : %,10d ms (%.1f%%)%n", phase3Time, totalTime > 0 ? phase3Time*100.0/totalTime : 0);
+            }
+            if (metrics.getSupportCalcTimeMillis() > 0) {
+                System.out.printf(Locale.US, "  Support Calc Time: %,10.0f ms%n", metrics.getSupportCalcTimeMillis());
+            }
+            if (metrics.getClosureCheckTimeMillis() > 0) {
+                System.out.printf(Locale.US, "  Closure Check Time: %,10.0f ms%n", metrics.getClosureCheckTimeMillis());
+            }
+        }
         System.out.println();
 
         System.out.println("RESOURCE CONSUMPTION:");
-        System.out.printf(Locale.US, "  Memory Usage     : %,.2f MB%n", memoryUsed / (1024.0 * 1024.0));
+        double totalMemoryMB = memoryUsed / (1024.0 * 1024.0);
+        System.out.printf(Locale.US, "  Memory Usage     : %,.2f MB%n", totalMemoryMB);
+
+        // Always print Peak Memory for consistent parsing by shell scripts
+        double peakMemoryMB = (metrics != null) ? metrics.getPeakMemoryMB() : 0.0;
+        System.out.printf(Locale.US, "  Peak Memory      : %,.2f MB%n", peakMemoryMB);
+
+        // Print phase-level memory breakdown if available
+        if (metrics != null && (metrics.getPhase1MemoryMB() > 0 || metrics.getPhase2MemoryMB() > 0 || metrics.getPhase3MemoryMB() > 0)) {
+            System.out.printf(Locale.US, "  Phase 1 Memory   : %,.2f MB (%.1f%%)%n", metrics.getPhase1MemoryMB(), peakMemoryMB > 0 ? metrics.getPhase1MemoryMB()*100.0/peakMemoryMB : 0);
+            System.out.printf(Locale.US, "  Phase 2 Memory   : %,.2f MB (%.1f%%)%n", metrics.getPhase2MemoryMB(), peakMemoryMB > 0 ? metrics.getPhase2MemoryMB()*100.0/peakMemoryMB : 0);
+            System.out.printf(Locale.US, "  Phase 3 Memory   : %,.2f MB (%.1f%%)%n", metrics.getPhase3MemoryMB(), peakMemoryMB > 0 ? metrics.getPhase3MemoryMB()*100.0/peakMemoryMB : 0);
+        }
+
         System.out.printf(Locale.US, "  Patterns Found   : %,d%n", patternCount);
         System.out.println();
 

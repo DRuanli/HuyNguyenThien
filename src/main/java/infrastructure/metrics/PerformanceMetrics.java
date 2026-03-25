@@ -72,6 +72,22 @@ public class PerformanceMetrics {
     private long closureCheckTimeNanos = 0;
 
     // ═══════════════════════════════════════════════════════════════
+    // MEMORY METRICS (bytes for precision, IEEE Access compliant)
+    // ═══════════════════════════════════════════════════════════════
+
+    /** Phase 1 memory consumption in bytes (singleton generation) */
+    private long phase1MemoryBytes = 0;
+
+    /** Phase 2 memory consumption in bytes (initialization + closure checking) */
+    private long phase2MemoryBytes = 0;
+
+    /** Phase 3 memory consumption in bytes (recursive mining) */
+    private long phase3MemoryBytes = 0;
+
+    /** Total peak memory consumption in bytes */
+    private long peakMemoryBytes = 0;
+
+    // ═══════════════════════════════════════════════════════════════
     // ALGORITHM METRICS
     // ═══════════════════════════════════════════════════════════════
 
@@ -205,6 +221,26 @@ public class PerformanceMetrics {
     }
 
     // ═══════════════════════════════════════════════════════════════
+    // MEMORY SETTERS (IEEE Access compliant)
+    // ═══════════════════════════════════════════════════════════════
+
+    public void setPhase1MemoryBytes(long bytes) {
+        this.phase1MemoryBytes = bytes;
+    }
+
+    public void setPhase2MemoryBytes(long bytes) {
+        this.phase2MemoryBytes = bytes;
+    }
+
+    public void setPhase3MemoryBytes(long bytes) {
+        this.phase3MemoryBytes = bytes;
+    }
+
+    public void setPeakMemoryBytes(long bytes) {
+        this.peakMemoryBytes = bytes;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
     // TIMING GETTERS (nanoseconds for precision)
     // ═══════════════════════════════════════════════════════════════
 
@@ -258,6 +294,50 @@ public class PerformanceMetrics {
 
     public double getClosureCheckTimeMillis() {
         return closureCheckTimeNanos / 1_000_000.0;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // MEMORY GETTERS (bytes for precision)
+    // ═══════════════════════════════════════════════════════════════
+
+    public long getPhase1MemoryBytes() {
+        return phase1MemoryBytes;
+    }
+
+    public long getPhase2MemoryBytes() {
+        return phase2MemoryBytes;
+    }
+
+    public long getPhase3MemoryBytes() {
+        return phase3MemoryBytes;
+    }
+
+    public long getPeakMemoryBytes() {
+        return peakMemoryBytes;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // MEMORY GETTERS (megabytes for readability)
+    // ═══════════════════════════════════════════════════════════════
+
+    public double getPhase1MemoryMB() {
+        return phase1MemoryBytes / (1024.0 * 1024.0);
+    }
+
+    public double getPhase2MemoryMB() {
+        return phase2MemoryBytes / (1024.0 * 1024.0);
+    }
+
+    public double getPhase3MemoryMB() {
+        return phase3MemoryBytes / (1024.0 * 1024.0);
+    }
+
+    public double getPeakMemoryMB() {
+        return peakMemoryBytes / (1024.0 * 1024.0);
+    }
+
+    public double getTotalPhaseMemoryMB() {
+        return (phase1MemoryBytes + phase2MemoryBytes + phase3MemoryBytes) / (1024.0 * 1024.0);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -605,6 +685,7 @@ public class PerformanceMetrics {
                "tau,topK,mode,support_calc,cores," +
                "total_ms,phase1_ms,phase2_ms,phase3_ms," +
                "support_calc_ms,closure_check_ms," +
+               "peak_memory_mb,phase1_memory_mb,phase2_memory_mb,phase3_memory_mb," +
                "candidates_examined,frequent_found,closed_found," +
                "pruned,cache_hits,cache_misses,cache_hit_rate," +
                "max_itemset_size,min_support_threshold," +
@@ -621,6 +702,7 @@ public class PerformanceMetrics {
                            "%.2f,%d,%s,%s,%d," +
                            "%.3f,%.3f,%.3f,%.3f," +
                            "%.3f,%.3f," +
+                           "%.2f,%.2f,%.2f,%.2f," +
                            "%d,%d,%d," +
                            "%d,%d,%d,%.2f," +
                            "%d,%d," +
@@ -629,6 +711,7 @@ public class PerformanceMetrics {
             tau, topK, parallelizationMode, supportCalculatorType, coresUsed,
             getTotalTimeMillis(), getPhase1TimeMillis(), getPhase2TimeMillis(), getPhase3TimeMillis(),
             getSupportCalcTimeMillis(), getClosureCheckTimeMillis(),
+            getPeakMemoryMB(), getPhase1MemoryMB(), getPhase2MemoryMB(), getPhase3MemoryMB(),
             candidatesExamined, frequentItemsetsFound, closedItemsetsFound,
             itemsetsPruned, cacheHits, cacheMisses, getCacheHitRate(),
             maxItemsetSize, minSupportThreshold,
