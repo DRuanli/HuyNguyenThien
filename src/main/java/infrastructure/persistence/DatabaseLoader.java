@@ -97,6 +97,6 @@ public class DatabaseLoader {
      * Load dataset with default probability range [0.5, 0.9].
      */
     public static UncertainDatabase load(String filename) throws IOException {
-        return loadWithUncertainty(filename, 0.5, 0.9);
+        return loadWithUncertainty(filename, 0.1, 0.9);
     }
 }
